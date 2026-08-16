@@ -1,7 +1,13 @@
-# yay v1.1
+# yay v1.2
 
 Personal Android system tweaks as a Magisk module.  
 **ARM64 only. Android 11 (API 30) minimum, optimized for Android 12+ (API 31).**
+
+Also bundles a fingerprint-locked Zygisk fix for a SystemUI MediaMetadata
+NPE crash — see "SystemUI MediaMetadata NPE Fix" below. It only ever
+activates on the exact device/firmware it targets and is an inert no-op
+everywhere else, so it ships as part of this module rather than a separate
+install.
 
 ---
 
@@ -16,6 +22,7 @@ No persistent daemon. Binary runs, does its job, exits.
 | Boot completed | `yay_apply --boot` | `service.sh` |
 | rules.json changed | `yay_apply --rules` | inotify watcher (opt-in) |
 | game_config.json changed | `yay_apply --game` | inotify watcher (opt-in) |
+| App process forked (fingerprint match only) | `systemui_media_fix.so` PLT hook | Zygisk |
 
 Hash caching: `--rules` is skipped at boot if `rules.json` hasn't changed
 since last run — component disable and appops mode overrides are persistent
@@ -251,29 +258,85 @@ delete `/data/adb/yay/` — remove manually if desired.
 
 ---
 
+## SystemUI MediaMetadata NPE Fix (Zygisk)
+
+Originally a standalone module, merged into yay so there's one module to
+install instead of two. Works around a null `MediaMetadata` crash in
+TranSystemUI on one specific firmware build.
+
+**Fingerprint-locked at both install time and runtime** — it only ever
+does anything on:
+- SDK 31
+- `ro.build.fingerprint` = `Infinix/X6815B-OP/Infinix-X6815B:12/SP1A.210812.016/231020V486:user/release-keys`
+- `com.android.systemui` versionCode `202309220` / versionName `12.0.2.187`
+- arm64-v8a
+
+`customize.sh` checks this at install time — on a mismatch, only the
+Zygisk `.so` is skipped (removed from the installed module); every other
+yay feature still installs and runs normally. `module.cpp`'s
+`isSupportedBuild()` re-checks the same fingerprint at runtime on every
+Zygisk load, independent of the install-time check, so a system update
+that changes the fingerprint after install causes the fix to self-disable
+rather than run against a binary layout it was never verified against.
+
+Requires **Magisk v26.1+** (or a Zygisk-capable KernelSU/APatch setup —
+Zygisk Next / ReZygisk) for the bundled Zygisk component to load; the
+rest of yay has no such requirement.
+
+No toggle for this in the webui — it's a firmware-bug workaround with its
+own auto-detection, not a preference to switch on or off.
+
+---
+
 ## Module structure
 
 ```
 yay/
 ├── bin/
 │   ├── yay_apply       ← compiled ARM64 binary
-│   └── yay_watch       ← compiled ARM64 binary
+│   ├── yay_watch       ← compiled ARM64 binary
+│   └── yay_inspect     ← compiled ARM64 binary
+├── zygisk/
+│   └── arm64-v8a.so    ← SystemUI MediaMetadata NPE Fix (fingerprint-locked)
 ├── config/             ← default configs (copied to /data/adb/yay/config/ on install)
 │   ├── rules.json
 │   ├── game_config.json
 │   └── io_config.json
 ├── src/                ← C++20 source (not shipped in module zip)
+│   └── media_fix/       ← Zygisk module source (module.cpp, binder.cpp/hpp, zygisk.hpp)
+├── webroot/             ← built WebUI (KernelSU WebUI X / MMRL)
 ├── CMakeLists.txt
 ├── build.sh
 ├── customize.sh
 ├── post-fs-data.sh
 ├── service.sh
+├── skip_mount
 └── module.prop
 ```
 
 ---
 
 ## Changelog
+
+**v1.2**
+- Merged the standalone "SystemUI MediaMetadata NPE Fix" Zygisk module into
+  yay — one module to install instead of two. See the dedicated section
+  above for the fix itself; nothing about its logic changed, only how it's
+  packaged and built.
+- Its build moved from a separate `ndk-build`/`Android.mk` project into
+  this repo's CMake build (`systemui_media_fix` target) — same compiler
+  flags, same hardening (LTO, RELRO, BIND_NOW, no exec stack, no TEXTREL,
+  stripped, no STL), now built by the same `cmake --build` invocation as
+  `yay_apply`/`yay_watch`/`yay_inspect` instead of a second toolchain
+  invocation.
+- `customize.sh` now also verifies the target firmware fingerprint and
+  either enables or removes the Zygisk `.so` accordingly — a mismatch does
+  not abort installing the rest of yay.
+- Minimum Magisk version raised to v26.1 (from v20.4) — needed for stable
+  built-in Zygisk support, which the merged fix depends on. Only relevant
+  when installing via Magisk; KernelSU/APatch installs are unaffected.
+- Added `skip_mount` (neither yay nor the merged fix touch a `system/`
+  overlay).
 
 **v1.1**
 - `rules.json` entries (`package`, `component`, `op`) are now validated

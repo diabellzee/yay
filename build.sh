@@ -57,14 +57,22 @@ cmake -B "$BUILD_DIR" \
 JOBS=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
 cmake --build "$BUILD_DIR" --parallel "$JOBS"
 
-# ─── Install binaries into module bin/ ───────────────────────────────────────
-mkdir -p "$OUT_DIR"
+# ─── Install ─────────────────────────────────────────────────────────────────
+# cmake --install applies every install() rule in CMakeLists.txt against
+# CMAKE_INSTALL_PREFIX (set to $SCRIPT_DIR above) — this alone produces
+# bin/yay_apply, bin/yay_watch, bin/yay_inspect, and (when the firmware-
+# locked Zygisk target built successfully) zygisk/arm64-v8a.so. No manual
+# copying needed.
 cmake --install "$BUILD_DIR"
-cp "$BUILD_DIR/yay_apply" "$OUT_DIR/yay_apply"
-cp "$BUILD_DIR/yay_watch" "$OUT_DIR/yay_watch"
-cp "$BUILD_DIR/yay_inspect" "$OUT_DIR/yay_inspect"
 
 echo ""
 echo "Build complete:"
 ls -lh "$OUT_DIR"/yay_apply "$OUT_DIR"/yay_watch "$OUT_DIR"/yay_inspect
 file "$OUT_DIR"/yay_apply
+
+if [ -f "$SCRIPT_DIR/zygisk/arm64-v8a.so" ]; then
+    echo ""
+    echo "SystemUI MediaMetadata NPE Fix (Zygisk):"
+    ls -lh "$SCRIPT_DIR/zygisk/arm64-v8a.so"
+    file "$SCRIPT_DIR/zygisk/arm64-v8a.so"
+fi

@@ -9,14 +9,9 @@ done
 # One-shot: runs, applies, exits. No daemon.
 "$MODDIR/bin/yay_apply" --boot
 
-# Optional: start yay_watch if either the config-file watcher or the
-# mirroring-priority watcher is enabled via its own sentinel file.
-# yay_watch checks both sentinels itself at startup and only spins up
-# whichever feature(s) are actually flagged on — this check here just
-# decides whether it's worth starting the process at all. Both features
-# sleep on a blocking primitive when idle (inotify / __system_property_wait)
-# — near-zero overhead either way.
-if [ -f "$MODDIR/enable_watch" ] || [ -f "$MODDIR/enable_mirror_priority" ]; then
+# Optional: start inotify watcher only if user explicitly enables it
+# via sentinel file. Watcher sleeps in inotify_wait — near-zero overhead.
+if [ -f "$MODDIR/enable_watch" ]; then
     "$MODDIR/bin/yay_watch" &
 fi
 

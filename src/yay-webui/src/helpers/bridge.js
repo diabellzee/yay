@@ -255,9 +255,8 @@ const LOG1 = '/data/adb/yay/run.log.1'
 const BIN = '/data/adb/modules/yay/bin/yay_apply'
 const CACHE = '/data/adb/yay/cache/rules.hash'
 const WATCH_FLAG = '/data/adb/modules/yay/enable_watch'
-const MIRROR_PRIORITY_FLAG = '/data/adb/modules/yay/enable_mirror_priority'
 
-export const PATHS = { CONFIG, LOG, LOG1, BIN, CACHE, WATCH_FLAG, MIRROR_PRIORITY_FLAG }
+export const PATHS = { CONFIG, LOG, LOG1, BIN, CACHE, WATCH_FLAG }
 
 export async function readConfig(name) {
   const raw = await readFile(`${CONFIG}/${name}`)
@@ -319,29 +318,6 @@ export async function setWatcherEnabled(enabled) {
     await writeFile(WATCH_FLAG, '')
   } else {
     await exec(`rm -f "${WATCH_FLAG}"`)
-  }
-}
-
-/**
- * Whether the mirroring-priority watcher (renices adbd/scrcpy-server when
- * a USB mirroring session — e.g. qtscrcpy — starts) is enabled. Independent
- * of the config-file watcher above: either can be on without the other,
- * both are read by the same yay_watch binary at its own startup (see
- * service.sh, which starts yay_watch if *either* sentinel is present).
- */
-export async function isMirrorPriorityEnabled() {
-  try {
-    return await fileExists(MIRROR_PRIORITY_FLAG)
-  } catch {
-    return false
-  }
-}
-
-export async function setMirrorPriorityEnabled(enabled) {
-  if (enabled) {
-    await writeFile(MIRROR_PRIORITY_FLAG, '')
-  } else {
-    await exec(`rm -f "${MIRROR_PRIORITY_FLAG}"`)
   }
 }
 

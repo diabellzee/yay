@@ -80,11 +80,14 @@ static void run_post() {
         {"debug.atrace.tags.enableflags",        "0"},
         {"persist.traced.enable",                "0"},
         {"persist.debug.trace",                  "0"},
-        // Transsion Flags
+        // Phantom process killer: suppress noisy UI (Android 12+)
         {"persist.sys.fflag.override.settings_enable_monitor_phantom_procs", "false"},
-        {"ro.tran.hide.freezer",                   "0"},
-        {"debug.camera.enhance_screen_brightness", "0"},
-        {"debug.thermal.throttle.support",         "no"},
+        // HWC Virtual Display Support: lets SurfaceFlinger back virtual
+        // displays (screen recording, casting/WFD) with the hardware
+        // composer instead of falling back to GLES compositing. Read once
+        // by SurfaceFlinger at its own init, so this must land before it
+        // starts — hence --post, not --boot.
+        {"debug.sf.enable_hwc_vds",              "1"},
     };
 
     for (auto& p : props) {

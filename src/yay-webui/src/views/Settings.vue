@@ -13,7 +13,7 @@
         <div class="px-1 pb-1">
           <h2 class="text-xs font-medium text-on-surface-variant uppercase tracking-wide">Automation</h2>
         </div>
-        <div class="bg-surface-container rounded-2xl divide-y divide-outline-variant/15">
+        <div class="bg-surface-container rounded-2xl">
           <div class="flex items-center justify-between px-4 py-4 gap-4">
             <div class="min-w-0 flex-1">
               <p class="text-sm font-medium text-on-surface">Inotify watcher</p>
@@ -24,19 +24,6 @@
             </div>
             <LoadingSpinner v-if="watcherLoading" :size="20" class="shrink-0" />
             <ToggleSwitch v-else :modelValue="watcherEnabled" @update:modelValue="toggleWatcher" class="shrink-0" />
-          </div>
-
-          <div class="flex items-center justify-between px-4 py-4 gap-4">
-            <div class="min-w-0 flex-1">
-              <p class="text-sm font-medium text-on-surface">Mirroring priority</p>
-              <p class="text-xs text-on-surface-variant mt-1">
-                Renices adbd + scrcpy-server (e.g. qtscrcpy) the moment a USB session starts,
-                so mirroring doesn't stutter under contention. No polling — sleeps until adbd
-                actually starts. Independent of the watcher above. Takes effect on next boot.
-              </p>
-            </div>
-            <LoadingSpinner v-if="mirrorPriorityLoading" :size="20" class="shrink-0" />
-            <ToggleSwitch v-else :modelValue="mirrorPriorityEnabled" @update:modelValue="toggleMirrorPriority" class="shrink-0" />
           </div>
         </div>
 
@@ -114,8 +101,6 @@ import { ref, onMounted } from 'vue'
 import {
   isWatcherEnabled,
   setWatcherEnabled,
-  isMirrorPriorityEnabled,
-  setMirrorPriorityEnabled,
   bridgeName,
   exec,
   PATHS,
@@ -134,8 +119,6 @@ import ErrorIcon from '@/components/icons/Error.vue'
 
 const watcherEnabled = ref(false)
 const watcherLoading = ref(true)
-const mirrorPriorityEnabled = ref(false)
-const mirrorPriorityLoading = ref(true)
 const bridge = ref(bridgeName())
 const toast = ref('')
 
@@ -151,16 +134,10 @@ function showToast(msg) {
 
 onMounted(async () => {
   watcherLoading.value = true
-  mirrorPriorityLoading.value = true
   try {
     watcherEnabled.value = await isWatcherEnabled()
   } finally {
     watcherLoading.value = false
-  }
-  try {
-    mirrorPriorityEnabled.value = await isMirrorPriorityEnabled()
-  } finally {
-    mirrorPriorityLoading.value = false
   }
 })
 
@@ -171,17 +148,6 @@ async function toggleWatcher(value) {
     showToast(value ? 'Watcher enabled — takes effect next boot' : 'Watcher disabled')
   } catch (e) {
     watcherEnabled.value = !value
-    showToast(`Error: ${e.message}`)
-  }
-}
-
-async function toggleMirrorPriority(value) {
-  mirrorPriorityEnabled.value = value
-  try {
-    await setMirrorPriorityEnabled(value)
-    showToast(value ? 'Mirroring priority enabled — takes effect next boot' : 'Mirroring priority disabled')
-  } catch (e) {
-    mirrorPriorityEnabled.value = !value
     showToast(`Error: ${e.message}`)
   }
 }

@@ -1,13 +1,11 @@
 #include "logger.h"
 #include "exec_util.h"
-#include "mirror_priority.h"
 
 #include <array>
 #include <cerrno>
 #include <cstdlib>
 #include <cstring>
 #include <string>
-#include <thread>
 #include <unistd.h>
 #include <sys/inotify.h>
 #include <sys/wait.h>
@@ -20,15 +18,7 @@ static constexpr const char* CONFIG_DIR = "/data/adb/yay/config";
 static constexpr const char* LOG_FILE   = "/data/adb/yay/run.log";
 static constexpr const char* YAY_APPLY  = "/data/adb/modules/yay/bin/yay_apply";
 static constexpr int         DEBOUNCE_MS = 1500;
-
-// Independent per-feature sentinels — service.sh starts yay_watch at all
-// if *either* is present, but each feature only actually does its work
-// (opens inotify / spawns the property-wait thread) if its own sentinel
-// exists. Keeping them separate lets someone run just config auto-apply,
-// just mirroring-priority renicing, or both, without one implying the
-// other.
-static constexpr const char* WATCH_CONFIG_FLAG     = "/data/adb/modules/yay/enable_watch";
-static constexpr const char* MIRROR_PRIORITY_FLAG  = "/data/adb/modules/yay/enable_mirror_priority";
+static constexpr const char* WATCH_CONFIG_FLAG = "/data/adb/modules/yay/enable_watch";
 
 static bool flag_exists(const char* path) {
     return access(path, F_OK) == 0;
@@ -114,59 +104,15 @@ int main(int /*argc*/, char* /*argv*/[]) {
     signal(SIGTERM, on_signal);
     signal(SIGINT,  on_signal);
 
-    const bool config_watch_enabled    = flag_exists(WATCH_CONFIG_FLAG);
-    const bool mirror_priority_enabled = flag_exists(MIRROR_PRIORITY_FLAG);
-
-    if (!config_watch_enabled && !mirror_priority_enabled) {
-        // Shouldn't normally happen — service.sh only starts yay_watch at
-        // all when at least one sentinel is present — but if both were
-        // removed between that check and this process actually starting
-        // (e.g. toggled off in the webui mid-boot), exit cleanly rather
-        // than idle forever doing nothing.
-        Logger::info("yay_watch: neither watch feature enabled, exiting");
-        _exit(0);
-    }
-
-    // Mirroring-priority watcher: renices adbd/scrcpy-server so USB
-    // mirroring (e.g. qtscrcpy) doesn't stutter under contention from
-    // unrelated background work. Runs on its own thread since it blocks
-    // in __system_property_wait — a genuinely different (property-based,
-    // not fd-based) wait primitive than the inotify poll() loop below, so
-    // it can't share that loop's poll() call. Detached: it runs for the
-    // lifetime of the process and is torn down implicitly on exit, same
-    // as everything else here — there's no per-session state to flush.
-    if (mirror_priority_enabled) {
-        Logger::info("yay_watch: mirror-priority enabled");
-        std::thread(mirror_priority::run).detach();
-    }
+    const bool config_watch_enabled = flag_exists(WATCH_CONFIG_FLAG);
 
     if (!config_watch_enabled) {
-        // Mirror-priority only: no inotify work to do on this thread, but
-        // the process needs to stay alive for the detached thread above
-        // to keep running. Sleep in short ticks so g_stop (SIGTERM/SIGINT)
-        // is still noticed promptly, same responsiveness as the inotify
-        // loop's 5s poll timeout below.
-        Logger::info("yay_watch: config-watch disabled, idling for signals only");
-        while (!g_stop) {
-            sleep(5);
-        }
-        Logger::info("yay_watch: stopping");
-        // _exit(), not return: mirror_priority::run() runs on a detached
-        // thread with no join/shutdown handshake (see its header comment
-        // — it's designed to run for the process's entire lifetime with
-        // nothing to flush on the way out). A plain `return` from main()
-        // runs the C++ runtime's normal exit path, which destroys static
-        // objects — including LoggerState's std::mutex in logger.cpp — in
-        // an unspecified order relative to whatever that detached thread
-        // happens to be doing at that exact moment. If it's mid-call into
-        // Logger::debug/info when the mutex gets destroyed, that's
-        // undefined behavior, and was empirically observed to hang the
-        // process indefinitely (reproduced and diagnosed during
-        // development — see project history) rather than crash cleanly.
-        // _exit() skips all of that: no static destructors run, the
-        // kernel reclaims every fd/thread/mapping unconditionally. Safe
-        // here specifically because Logger writes are unbuffered
-        // (raw ::write(), not stdio) — there's nothing left to flush.
+        // Shouldn't normally happen — service.sh only starts yay_watch at
+        // all when this sentinel is present — but if it was removed
+        // between that check and this process actually starting (e.g.
+        // toggled off in the webui mid-boot), exit cleanly rather than
+        // idle forever doing nothing.
+        Logger::info("yay_watch: config-watch not enabled, exiting");
         _exit(0);
     }
 
@@ -244,7 +190,5 @@ int main(int /*argc*/, char* /*argv*/[]) {
     Logger::info("yay_watch: stopping");
     inotify_rm_watch(ifd, wd);
     close(ifd);
-    // See the _exit() rationale above (mirror-priority-only path) — same
-    // applies here whenever mirror_priority_enabled is also true.
     _exit(0);
 }

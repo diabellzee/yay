@@ -4,6 +4,7 @@ build/
 
 # Build output — produced by build.sh, not source
 bin/
+zygisk/
 
 # Packaged flashable module zips
 yay-*.zip
