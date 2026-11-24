@@ -63,6 +63,15 @@ const DEFAULT_IO = {
   read_ahead_kb: 128,
 }
 
+const DEFAULT_DNS = {
+  _comment: 'yay Auto Private DNS.',
+  version: 1,
+  enabled: false,
+  wifi_host: '',
+  mobile_host: '1dot1dot1dot1.cloudflare-dns.com',
+  debounce_ms: 1500,
+}
+
 const DEFAULT_LOG = `[07-01 08:12:03 I yay_apply.cpp:44] yay_apply --boot starting (v1.1)
 [07-01 08:12:03 I io_scheduler.cpp:88] scheduler set to kyber for mmcblk0, sda
 [07-01 08:12:03 I io_scheduler.cpp:112] entropy contribution disabled, iostat disabled
@@ -81,6 +90,7 @@ function seed() {
   store.set('/data/adb/yay/config/rules.json', JSON.stringify(DEFAULT_RULES, null, 2))
   store.set('/data/adb/yay/config/game_config.json', JSON.stringify(DEFAULT_GAMES, null, 2))
   store.set('/data/adb/yay/config/io_config.json', JSON.stringify(DEFAULT_IO, null, 2))
+  store.set('/data/adb/yay/config/dns_config.json', JSON.stringify(DEFAULT_DNS, null, 2))
   store.set('/data/adb/yay/run.log', DEFAULT_LOG)
 }
 seed()

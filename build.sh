@@ -60,14 +60,14 @@ cmake --build "$BUILD_DIR" --parallel "$JOBS"
 # ─── Install ─────────────────────────────────────────────────────────────────
 # cmake --install applies every install() rule in CMakeLists.txt against
 # CMAKE_INSTALL_PREFIX (set to $SCRIPT_DIR above) — this alone produces
-# bin/yay_apply, bin/yay_watch, bin/yay_inspect, and (when the firmware-
+# bin/yay_apply, bin/yay_watch, bin/yay_inspect, bin/yay_dns, and (when the firmware-
 # locked Zygisk target built successfully) zygisk/arm64-v8a.so. No manual
 # copying needed.
 cmake --install "$BUILD_DIR"
 
 echo ""
 echo "Build complete:"
-ls -lh "$OUT_DIR"/yay_apply "$OUT_DIR"/yay_watch "$OUT_DIR"/yay_inspect
+ls -lh "$OUT_DIR"/yay_apply "$OUT_DIR"/yay_watch "$OUT_DIR"/yay_inspect "$OUT_DIR"/yay_dns
 file "$OUT_DIR"/yay_apply
 
 if [ -f "$SCRIPT_DIR/zygisk/arm64-v8a.so" ]; then

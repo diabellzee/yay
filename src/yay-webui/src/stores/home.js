@@ -3,7 +3,7 @@ import { ref } from 'vue'
 import { readConfig, isWatcherEnabled, bridgeName, PATHS } from '@/helpers/bridge'
 
 export const useHomeStore = defineStore('home', () => {
-  const version = ref('1.1')
+  const version = ref('1.3')
   const componentCount = ref(0)
   const appopCount = ref(0)
   const gameCount = ref(0)

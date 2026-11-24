@@ -383,6 +383,47 @@ bool validate_config_shape(
                 }
                 return true;
             }
+            case ConfigKind::DnsConfig: {
+                // Types only — range/format checks (hostname syntax,
+                // debounce bounds) live in parse_dns_config(), which is
+                // the one place that also knows the defaults.
+                for (const char* key : {"enabled"}) {
+                    if (cfg.contains(key) && !cfg[key].is_boolean()) {
+                        return set_error(error_out,
+                            std::string("\"") + key + "\" is not a boolean");
+                    }
+                }
+                for (const char* key : {"wifi_host", "mobile_host", "prefer"}) {
+                    if (cfg.contains(key) && !cfg[key].is_string()) {
+                        return set_error(error_out,
+                            std::string("\"") + key + "\" is not a string");
+                    }
+                }
+                if (cfg.contains("debounce_ms") &&
+                    !cfg["debounce_ms"].is_number_integer()) {
+                    return set_error(error_out,
+                        "\"debounce_ms\" is not an integer");
+                }
+                for (const char* key : {"wifi_ifaces", "cellular_prefixes"}) {
+                    if (!cfg.contains(key)) {
+                        continue;
+                    }
+                    if (!cfg[key].is_array()) {
+                        return set_error(error_out,
+                            std::string("\"") + key + "\" is not an array");
+                    }
+                    size_t index = 0;
+                    for (const auto& s : cfg[key]) {
+                        if (!s.is_string()) {
+                            return set_error(error_out,
+                                std::string(key) + "[" + std::to_string(index) +
+                                "] is not a string");
+                        }
+                        ++index;
+                    }
+                }
+                return true;
+            }
         }
 
         return set_error(error_out, "unknown config kind");

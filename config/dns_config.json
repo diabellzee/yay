@@ -1,0 +1,9 @@
+{
+  "_comment": "yay Auto Private DNS. wifi_host = your personal NextDNS endpoint (e.g. abc123.dns.nextdns.io). mobile_host = used on mobile data (Cloudflare passes carrier SNI/DPI filters). When Wi-Fi and mobile data are both up, prefer decides (cellular|wifi). Manual Private DNS changes are respected until it is set back to one of these two profiles or the device reboots.",
+  "version": 1,
+  "enabled": false,
+  "wifi_host": "",
+  "mobile_host": "1dot1dot1dot1.cloudflare-dns.com",
+  "prefer": "cellular",
+  "debounce_ms": 1500
+}

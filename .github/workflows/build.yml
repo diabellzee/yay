@@ -45,11 +45,23 @@ jobs:
           chmod +x build.sh
           ./build.sh "${{ inputs.build_type }}"
 
+      - name: Unit tests (host, yay_dns policy logic)
+        run: |
+          # Pure logic (interface classification, manual-override state
+          # machine, hostname validation) — compiled natively, not with the
+          # NDK. nlohmann/json comes from the FetchContent checkout that the
+          # build step above already populated.
+          JSON_INC="build_arm64-v8a_${{ inputs.build_type }}/_deps/nlohmann_json-src/include"
+          [ -d "$JSON_INC" ] || { echo "::error::nlohmann_json include dir not found: $JSON_INC"; exit 1; }
+          g++ -std=c++20 -Isrc -I"$JSON_INC" \
+              tests/dns_policy_test.cpp src/dns_policy.cpp -o /tmp/dns_policy_test
+          /tmp/dns_policy_test
+
       - name: Verify binaries
         run: |
-          file bin/yay_apply bin/yay_watch bin/yay_inspect
-          # Sanity: all three must be ARM64, all must exist and be non-empty.
-          for bin in bin/yay_apply bin/yay_watch bin/yay_inspect; do
+          file bin/yay_apply bin/yay_watch bin/yay_inspect bin/yay_dns
+          # Sanity: all four must be ARM64, all must exist and be non-empty.
+          for bin in bin/yay_apply bin/yay_watch bin/yay_inspect bin/yay_dns; do
             [ -s "$bin" ] || { echo "::error::$bin is missing or empty"; exit 1; }
             file "$bin" | grep -q "ARM aarch64" || { echo "::error::$bin is not ARM64"; exit 1; }
           done
@@ -117,7 +129,7 @@ jobs:
             cp zygisk/arm64-v8a.so "$stage/zygisk/"
           fi
 
-          chmod 755 "$stage"/bin/yay_apply "$stage"/bin/yay_watch "$stage"/bin/yay_inspect
+          chmod 755 "$stage"/bin/yay_apply "$stage"/bin/yay_watch "$stage"/bin/yay_inspect "$stage"/bin/yay_dns
           chmod 755 "$stage"/customize.sh "$stage"/post-fs-data.sh "$stage"/service.sh
           [ -f "$stage/zygisk/arm64-v8a.so" ] && chmod 644 "$stage/zygisk/arm64-v8a.so"
           true

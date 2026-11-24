@@ -88,6 +88,19 @@ add_executable(yay_watch
     ${COMMON_SOURCES}
 )
 
+# yay_dns: Auto Private DNS daemon. Deliberately NOT linked against
+# COMMON_SOURCES — it needs none of the I/O-scheduler / rules / game-mode
+# machinery, and leaving those out keeps this long-lived resident process
+# as small as possible. dns_policy.cpp is the pure decision logic and is
+# also what tests/dns_policy_test.cpp exercises on a host machine.
+add_executable(yay_dns
+    src/main_dns.cpp
+    src/dns_policy.cpp
+    src/logger.cpp
+    src/json_config.cpp
+    src/exec_util.cpp
+)
+
 # yay_inspect: on-demand manifest/appops browser for the webui's "add
 # component" / "add appops" pickers. Separate binary rather than folded
 # into yay_apply — it pulls in zlib (for DEFLATE-compressed manifest
@@ -108,7 +121,8 @@ add_executable(yay_inspect
 foreach(target
     yay_apply
     yay_watch
-    yay_inspect)
+    yay_inspect
+    yay_dns)
 
     target_compile_features(${target}
         PRIVATE
@@ -174,6 +188,11 @@ foreach(target
 endforeach()
 
 target_link_libraries(yay_inspect PRIVATE z)
+
+# yay_dns stays resident for the whole uptime, so favour size over the last
+# few percent of speed (it is asleep in poll() virtually all the time).
+# Appended after the per-target -O2 above, so it wins for this target only.
+target_compile_options(yay_dns PRIVATE $<$<CONFIG:Release>:-Os>)
 
 #
 # SystemUI MediaMetadata NPE Fix (Zygisk module)
@@ -295,7 +314,8 @@ target_link_libraries(systemui_media_fix PRIVATE
 foreach(target
     yay_apply
     yay_watch
-    yay_inspect)
+    yay_inspect
+    yay_dns)
 
     target_link_options(${target}
         PRIVATE
@@ -308,7 +328,7 @@ foreach(target
 endforeach()
 
 # Install
-install(TARGETS yay_apply yay_watch yay_inspect RUNTIME DESTINATION bin)
+install(TARGETS yay_apply yay_watch yay_inspect yay_dns RUNTIME DESTINATION bin)
 
 install(CODE [[
 execute_process(
@@ -319,6 +339,9 @@ execute_process(
 )
 execute_process(
     COMMAND ${CMAKE_STRIP} --strip-all ${CMAKE_INSTALL_PREFIX}/bin/yay_inspect
+)
+execute_process(
+    COMMAND ${CMAKE_STRIP} --strip-all ${CMAKE_INSTALL_PREFIX}/bin/yay_dns
 )
 ]]
 )

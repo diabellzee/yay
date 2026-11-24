@@ -16,7 +16,7 @@ std::optional<Json> load_json(std::string_view path) noexcept;
 [[nodiscard]]
 bool save_json(std::string_view path, const Json& j) noexcept;
 
-// Lightweight structural sanity check for the three yay config files —
+// Lightweight structural sanity check for the yay config files —
 // intentionally not a full JSON-Schema validator (no extra dependency,
 // nlohmann/json already does syntax validation in load_json). This exists
 // to catch a config that *parses* fine as JSON but has the wrong shape —
@@ -30,7 +30,7 @@ bool save_json(std::string_view path, const Json& j) noexcept;
 //
 // Returns true if `cfg` has a sane top-level shape for `kind`. On failure,
 // `error_out` (if non-null) is set to a short human-readable reason.
-enum class ConfigKind { Rules, GameConfig, IoConfig };
+enum class ConfigKind { Rules, GameConfig, IoConfig, DnsConfig };
 
 [[nodiscard]]
 bool validate_config_shape(

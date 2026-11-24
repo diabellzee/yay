@@ -1,4 +1,4 @@
-# yay v1.2
+# yay v1.3
 
 Personal Android system tweaks as a Magisk module.  
 **ARM64 only. Android 11 (API 30) minimum, optimized for Android 12+ (API 31).**
@@ -13,7 +13,9 @@ install.
 
 ## Architecture
 
-No persistent daemon. Binary runs, does its job, exits.
+No persistent daemon by default. Binary runs, does its job, exits. The only
+resident processes are the two **opt-in** ones: the inotify watcher and
+Auto Private DNS (`yay_dns`), both of which sleep in `poll()` with no timers.
 
 | Trigger | What runs | How |
 |---|---|---|
@@ -22,6 +24,8 @@ No persistent daemon. Binary runs, does its job, exits.
 | Boot completed | `yay_apply --boot` | `service.sh` |
 | rules.json changed | `yay_apply --rules` | inotify watcher (opt-in) |
 | game_config.json changed | `yay_apply --game` | inotify watcher (opt-in) |
+| Boot completed (opt-in via `dns_config.json`) | `yay_dns --start` | `service.sh` |
+| Wi-Fi / mobile-data change | `yay_dns` switches Private DNS | netlink event (no polling) |
 | App process forked (fingerprint match only) | `systemui_media_fix.so` PLT hook | Zygisk |
 
 Hash caching: `--rules` is skipped at boot if `rules.json` hasn't changed
@@ -53,6 +57,7 @@ is rejected outright and logged; nothing partial is applied from it.
 - Appops: per-package op overrides (see `config/rules.json`)
 - Game mode: per-package resolution downscale via Android GameManager API
 - fstrim: deferred 60s after boot
+- Auto Private DNS (opt-in): Wi-Fi → your NextDNS host, mobile data → Cloudflare (see below)
 
 Component disable and appops calls each require one `cmd` invocation per
 entry (Android's `pm`/`appops` shell commands don't support a batch form),
@@ -124,6 +129,7 @@ export ANDROID_NDK_HOME=~/Android/Sdk/ndk/26.x.x
 # Binaries land in bin/
 # yay_apply  — one-shot applier
 # yay_watch  — optional inotify watcher
+# yay_dns    — Auto Private DNS daemon
 ```
 
 Targets API 31, ABI arm64-v8a, C++20, static libc++ (NDK's `c++_static`).
@@ -231,6 +237,112 @@ pkill yay_watch
 
 ---
 
+## Auto Private DNS (`yay_dns`)
+
+Some carriers selectively block NextDNS (SNI/DPI filtering), which leaves
+Android showing *"Private DNS server cannot be accessed"* on mobile data.
+`yay_dns` swaps Android's Private DNS (DNS-over-TLS) endpoint by connection
+type, and does nothing else:
+
+| Active connection | Private DNS |
+|---|---|
+| Wi-Fi only | `wifi_host` — your personal NextDNS endpoint |
+| Mobile data only | `mobile_host` — default `1dot1dot1dot1.cloudflare-dns.com` |
+| **Wi-Fi + mobile data both up** | **mobile data wins** → `mobile_host` (set `"prefer": "wifi"` to flip) |
+| Nothing usable (airplane mode, no signal) | left untouched |
+
+**Opt-in.** It needs your own NextDNS endpoint, which no default can supply.
+Enable it in the WebUI (*Settings → Auto Private DNS*), or edit
+`/data/adb/yay/config/dns_config.json`:
+
+```json
+{
+  "version": 1,
+  "enabled": true,
+  "wifi_host": "abc123.dns.nextdns.io",
+  "mobile_host": "1dot1dot1dot1.cloudflare-dns.com",
+  "debounce_ms": 1500
+}
+```
+
+`prefer` (`"cellular"` default, or `"wifi"`) decides who wins when both are up.
+
+Optional advanced keys: `wifi_ifaces` (default `["wlan0"]`) and
+`cellular_prefixes` (default covers Qualcomm `rmnet*`, MediaTek `ccmni*`,
+Unisoc `seth*`/`sipa*`, plus `v4-` 464XLAT variants). Hosts must be real
+hostnames — IP literals are rejected.
+
+### How it works
+
+- **Zero polling.** Blocks in `poll()` with an infinite timeout on a
+  `NETLINK_ROUTE` socket subscribed to link + IPv4/IPv6 address changes. On a
+  stable network it has no timers and no wakeups. Events for unrelated
+  interfaces (`tun*`, `dummy*`, `p2p-*`, …) are filtered out immediately.
+- **No VPN / TUN, no packet interception.** The only thing it writes is
+  `Settings.Global` `private_dns_mode` / `private_dns_specifier` through
+  `cmd settings`. Traffic stays entirely in the kernel/netd.
+- **Which network?** A network counts as active when its interface has a
+  usable address (IPv4 non-link-local, or IPv6 global). Wi-Fi is the station
+  interface only (`wlan0`, matched exactly) — hotspot/Wi-Fi Direct interfaces
+  don't count as "connected to Wi-Fi". If both are up, `prefer` decides
+  (default: the SIM wins). A phone with mobile data **switched off** still
+  keeps an IMS/VoLTE cellular interface with an address, so when both are up
+  the daemon also reads `settings get global mobile_data`: if it is `0`, the
+  cellular interface is not treated as data and Wi-Fi wins. That check is
+  skipped when only cellular is up, so an odd reading (e.g. dual-SIM) can
+  never stop the mobile profile from applying.
+- **Robust.** Debounced (trailing edge, capped so endless flapping still
+  converges), idempotent (never rewrites a value that's already correct),
+  every write is read back and retried on failure, waits for the Settings
+  Provider after boot, and handles netlink overflow by re-evaluating from
+  scratch. Single instance via a kernel record lock — no stale pidfile.
+- **Respects manual changes.** The daemon remembers what it wrote. If
+  Private DNS is something else — off, "Automatic", a custom host — it is
+  treated as *your* choice and left alone, across any number of network
+  changes. Automation resumes when the setting is put back on one of the two
+  module hosts (checked at the next network event — it never polls), or after
+  a reboot. Editing `wifi_host`/`mobile_host` is not mistaken for a manual
+  change.
+
+### Commands
+
+```sh
+yay_dns --start    # start detached, or make the running one reload config
+yay_dns --stop
+yay_dns --once     # evaluate + apply once, no daemon (debugging)
+yay_dns --status   # JSON: running, network, current Private DNS, hosts
+yay_dns            # foreground
+```
+
+Logs go to `run.log` / `adb logcat -s yay_dns`, and only on actual state
+changes (switch, manual override detected, resume).
+
+### Limitations
+
+- "Active" is decided by interface addresses, not by Android's validated
+  default network. If you're on a Wi-Fi with no internet while mobile data
+  carries the traffic, the Wi-Fi profile is applied.
+- With the default `prefer: cellular`, on Wi-Fi *with mobile data enabled*
+  the mobile profile (Cloudflare) is what's active — NextDNS applies on Wi-Fi
+  only when mobile data is off or there is no SIM data. Toggling mobile data
+  is picked up at the next network event; if your ROM keeps the data
+  interface up after toggling, it may lag until one occurs.
+- Manual changes are noticed at the next network event, not instantly.
+- Stopping/removing the module leaves Private DNS at whatever it was last set to.
+- A VPN that sets its own DNS takes precedence over Private DNS, as on stock Android.
+
+### Tests
+
+The decision logic (interface classification, manual-override state machine,
+hostname validation) is pure and has host-side unit tests, run by CI:
+
+```sh
+g++ -std=c++20 -Isrc -I<nlohmann include dir> \
+    tests/dns_policy_test.cpp src/dns_policy.cpp -o /tmp/t && /tmp/t
+```
+
+---
+
 ## Logs
 
 ```
@@ -247,9 +359,11 @@ adb logcat -s yay       — real-time (tag: yay / yay_watch)
 ├── config/
 │   ├── rules.json
 │   ├── game_config.json
-│   └── io_config.json
+│   ├── io_config.json
+│   └── dns_config.json
 ├── cache/
-│   └── rules.hash      ← hash of last applied rules.json (rules.json only — see Hash caching above)
+│   ├── rules.hash      ← hash of last applied rules.json (rules.json only — see Hash caching above)
+│   └── yay_dns.lock    ← single-instance lock for yay_dns
 └── run.log
 ```
 
@@ -295,13 +409,16 @@ yay/
 ├── bin/
 │   ├── yay_apply       ← compiled ARM64 binary
 │   ├── yay_watch       ← compiled ARM64 binary
-│   └── yay_inspect     ← compiled ARM64 binary
+│   ├── yay_inspect     ← compiled ARM64 binary
+│   └── yay_dns         ← compiled ARM64 binary (Auto Private DNS)
 ├── zygisk/
 │   └── arm64-v8a.so    ← SystemUI MediaMetadata NPE Fix (fingerprint-locked)
 ├── config/             ← default configs (copied to /data/adb/yay/config/ on install)
 │   ├── rules.json
 │   ├── game_config.json
-│   └── io_config.json
+│   ├── io_config.json
+│   └── dns_config.json
+├── tests/              ← host-side unit tests (not shipped)
 ├── src/                ← C++20 source (not shipped in module zip)
 │   └── media_fix/       ← Zygisk module source (module.cpp, binder.cpp/hpp, zygisk.hpp)
 ├── webroot/             ← built WebUI (KernelSU WebUI X / MMRL)
@@ -317,6 +434,15 @@ yay/
 ---
 
 ## Changelog
+
+**v1.3**
+- New **Auto Private DNS** (`yay_dns`, opt-in): Wi-Fi → your NextDNS host,
+  mobile data → Cloudflare (mobile data wins when both are up; `prefer` key), to get around carrier blocking of NextDNS.
+  Netlink event-driven (zero polling), no VPN/TUN, debounced and idempotent,
+  respects manual Private DNS changes. WebUI toggle + host fields in
+  Settings. See the dedicated section above.
+- `ConfigKind::DnsConfig` structural validation for `dns_config.json`.
+- Host-side unit tests for the policy logic, run in CI.
 
 **v1.2**
 - Merged the standalone "SystemUI MediaMetadata NPE Fix" Zygisk module into

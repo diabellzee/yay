@@ -321,6 +321,53 @@ export async function setWatcherEnabled(enabled) {
   }
 }
 
+// ── Auto Private DNS (yay_dns) ──────────────────────────────────────────────
+// The daemon owns its own lifecycle: `--start` detaches it (or makes an
+// already-running one reload dns_config.json), `--stop` stops it. Both are
+// idempotent, so the UI just calls them after every save.
+const DNS_BIN = '/data/adb/modules/yay/bin/yay_dns'
+
+export const DNS_DEFAULT_MOBILE_HOST = '1dot1dot1dot1.cloudflare-dns.com'
+
+/**
+ * Same rule as valid_hostname() in src/dns_policy.cpp: >= 2 labels of
+ * [a-z0-9-] (1..63 chars, no leading/trailing '-'), total <= 253, and a TLD
+ * containing a letter (rejects IP literals — Private DNS needs a hostname).
+ */
+export function isValidDnsHost(host) {
+  const h = String(host ?? '').trim().toLowerCase()
+  if (h.length < 1 || h.length > 253) return false
+  const labels = h.split('.')
+  if (labels.length < 2) return false
+  if (!labels.every((l) => /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/.test(l))) return false
+  return /[a-z]/.test(labels[labels.length - 1])
+}
+
+/** Start the daemon, or make a running one reload its config. */
+export async function startDnsDaemon() {
+  const { errno, stderr } = await exec(`${DNS_BIN} --start`)
+  if (errno !== 0) throw new Error(stderr.trim() || `yay_dns --start failed (${errno})`)
+}
+
+export async function stopDnsDaemon() {
+  await exec(`${DNS_BIN} --stop`)
+}
+
+/**
+ * Live state straight from the binary: { running, enabled, network,
+ * current: {mode, host}, wifi_host, mobile_host } — or null if unavailable
+ * (older install without yay_dns, dev browser, unparsable output).
+ */
+export async function getDnsStatus() {
+  try {
+    const { errno, stdout } = await exec(`${DNS_BIN} --status`)
+    if (errno !== 0) return null
+    return JSON.parse(stdout)
+  } catch {
+    return null
+  }
+}
+
 // ── yay_inspect: on-demand component/appops browser ────────────────────────
 // Backs the "Add component" / "Add appops override" pickers so the person
 // doesn't have to manually dumpsys+grep over a terminal. Both read-only,

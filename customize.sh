@@ -12,7 +12,7 @@ mkdir -p "$CFG_DIR" "$CACHE_DIR"
 chmod 700 "$YAY_DATA" "$CFG_DIR" "$CACHE_DIR"
 
 # Copy default configs only if not already present (preserve user edits on update)
-for f in rules.json game_config.json io_config.json; do
+for f in rules.json game_config.json io_config.json dns_config.json; do
     if [ ! -f "$CFG_DIR/$f" ]; then
         if [ -f "$MODDIR/config/$f" ]; then
             cp "$MODDIR/config/$f" "$CFG_DIR/$f"
@@ -27,6 +27,7 @@ done
 chmod 755 "$MODDIR/bin/yay_apply"
 chmod 755 "$MODDIR/bin/yay_watch"
 chmod 755 "$MODDIR/bin/yay_inspect"
+chmod 755 "$MODDIR/bin/yay_dns"
 
 # ─── SystemUI MediaMetadata NPE Fix (Zygisk component) ──────────────────────
 # Fingerprint-locked to one exact firmware build (see media_fix/module.cpp's
@@ -70,6 +71,12 @@ if [ -f "$MODDIR/zygisk/arm64-v8a.so" ]; then
         rmdir "$MODDIR/zygisk" 2>/dev/null
     fi
 fi
+
+# Auto Private DNS is opt-in: it needs your own NextDNS endpoint, which no
+# default can supply. Nothing runs until it is enabled in the WebUI
+# (Settings -> Auto Private DNS) or "enabled" is set in dns_config.json.
+ui_print "- yay: Auto Private DNS is off by default"
+ui_print "  Enable it in the WebUI (Settings) and enter your NextDNS host"
 
 ui_print "- yay: running full first-time apply..."
 "$MODDIR/bin/yay_apply" --full

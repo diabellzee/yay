@@ -15,6 +15,14 @@ if [ -f "$MODDIR/enable_watch" ]; then
     "$MODDIR/bin/yay_watch" &
 fi
 
+# Auto Private DNS: Wi-Fi -> NextDNS, mobile data -> Cloudflare.
+# Always safe to call: it exits immediately (0 cost) unless
+# /data/adb/yay/config/dns_config.json has "enabled": true, and it
+# detaches itself, so there is no `&` / subshell to manage here.
+# Started AFTER yay_apply on purpose: yay_apply --boot rotates run.log, and
+# the daemon must open the fresh file rather than the rotated one.
+"$MODDIR/bin/yay_dns" --start >/dev/null 2>&1
+
 # EEM (Extended Environment Monitor) undervolt offset.
 # Backgrounded + delayed well past boot_completed.
 # Not persisted anywhere by us — this only pokes a runtime kernel node.

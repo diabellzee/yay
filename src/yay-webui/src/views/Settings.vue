@@ -27,6 +27,40 @@
           </div>
         </div>
 
+        <!-- Auto Private DNS -->
+        <div class="bg-surface-container rounded-2xl">
+          <div class="flex items-center justify-between px-4 py-4 gap-4">
+            <div class="min-w-0 flex-1">
+              <p class="text-sm font-medium text-on-surface">Auto Private DNS</p>
+              <p class="text-xs text-on-surface-variant mt-1">
+                Wi-Fi uses your NextDNS host; mobile data switches to Cloudflare, which carrier
+                filtering doesn't block. Event-driven (no polling). If you change Private DNS
+                yourself it stays untouched until you set it back to one of these two hosts,
+                or reboot.
+              </p>
+            </div>
+            <LoadingSpinner v-if="dns.loading || dns.saving" :size="20" class="shrink-0" />
+            <ToggleSwitch v-else :key="dnsToggleKey" :modelValue="dns.enabled" @update:modelValue="toggleDns" class="shrink-0" />
+          </div>
+
+          <div class="px-4 pb-4 pt-4 space-y-3 border-t border-outline-variant/15">
+            <InputField v-model="dns.wifiHost" label="Wi-Fi host (your NextDNS endpoint)"
+              placeholder="abc123.dns.nextdns.io" />
+            <InputField v-model="dns.mobileHost" label="Mobile data host"
+              placeholder="1dot1dot1dot1.cloudflare-dns.com" />
+
+            <p v-if="dnsStatusLine" class="text-xs text-on-surface-variant break-all">{{ dnsStatusLine }}</p>
+
+            <div class="flex justify-end">
+              <button @click="saveDns" :disabled="dns.saving || dns.loading"
+                class="px-4 h-9 rounded-full bg-primary text-on-primary text-sm font-medium
+                       disabled:opacity-50 active:opacity-80 transition-opacity">
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+
         <!-- Log export -->
         <div class="px-1 pb-1 pt-2">
           <h2 class="text-xs font-medium text-on-surface-variant uppercase tracking-wide">Diagnostics</h2>
@@ -51,7 +85,7 @@
           <h2 class="text-xs font-medium text-on-surface-variant uppercase tracking-wide">About</h2>
         </div>
         <div class="bg-surface-container rounded-2xl divide-y divide-outline-variant/15">
-          <InfoRow icon="🧩" label="Version" value="yay v1.1" />
+          <InfoRow icon="🧩" label="Version" value="yay v1.3" />
           <InfoRow icon="🔗" label="Bridge" :value="bridge" />
           <InfoRow icon="📁" label="Config path" value="/data/adb/yay/config/" mono />
           <InfoRow icon="📜" label="Log path" value="/data/adb/yay/run.log" mono />
@@ -97,7 +131,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import {
   isWatcherEnabled,
   setWatcherEnabled,
@@ -106,7 +140,10 @@ import {
   PATHS,
 } from '@/helpers/bridge'
 
+import { useDnsStore } from '@/stores/dns'
+
 import ToggleSwitch from '@/components/ui/ToggleSwitch.vue'
+import InputField from '@/components/ui/InputField.vue'
 import Ripple from '@/components/ui/Ripple.vue'
 import Modal from '@/components/ui/Modal.vue'
 import LoadingSpinner from '@/components/ui/LoadingSpinner.vue'
@@ -117,6 +154,7 @@ import ChevronRightIcon from '@/components/icons/ChevronRight.vue'
 import CheckIcon from '@/components/icons/Check.vue'
 import ErrorIcon from '@/components/icons/Error.vue'
 
+const dns = useDnsStore()
 const watcherEnabled = ref(false)
 const watcherLoading = ref(true)
 const bridge = ref(bridgeName())
@@ -133,6 +171,7 @@ function showToast(msg) {
 }
 
 onMounted(async () => {
+  dns.load()
   watcherLoading.value = true
   try {
     watcherEnabled.value = await isWatcherEnabled()
@@ -140,6 +179,47 @@ onMounted(async () => {
     watcherLoading.value = false
   }
 })
+
+// ── Auto Private DNS ────────────────────────────────────────────────────────
+const dnsToggleKey = ref(0) // bump to force the switch back to the real state
+const NET_LABEL = { wifi: 'Wi-Fi', cellular: 'Mobile data', none: 'No network' }
+
+const dnsStatusLine = computed(() => {
+  const st = dns.status
+  if (!st) return ''
+  const parts = []
+  parts.push(st.running ? 'Daemon running' : 'Daemon not running')
+  if (st.network) parts.push(NET_LABEL[st.network] ?? st.network)
+  const cur = st.current
+  if (cur) {
+    parts.push(
+      cur.mode === 'hostname' ? `Private DNS: ${cur.host}` : `Private DNS: ${cur.mode || 'unset'}`,
+    )
+  }
+  if (st.config_error) parts.push(`Config error: ${st.config_error}`)
+  return parts.join(' · ')
+})
+
+async function toggleDns(value) {
+  try {
+    await dns.save(value)
+    showToast(value ? 'Auto Private DNS enabled' : 'Auto Private DNS disabled')
+  } catch (e) {
+    // dns.enabled is only committed on success; re-mount the switch so the
+    // native checkbox can't stay visually flipped when validation failed.
+    dnsToggleKey.value++
+    showToast(e.message)
+  }
+}
+
+async function saveDns() {
+  try {
+    await dns.save()
+    showToast(dns.enabled ? 'Saved — applied' : 'Saved (feature is off)')
+  } catch (e) {
+    showToast(e.message)
+  }
+}
 
 async function toggleWatcher(value) {
   watcherEnabled.value = value
