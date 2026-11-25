@@ -17,7 +17,8 @@ export const useDnsStore = defineStore('dns', () => {
   const wifiHost = ref('')
   const mobileHost = ref(DNS_DEFAULT_MOBILE_HOST)
   const status = ref(null)
-  const loading = ref(true)
+  const loading = ref(true)   // config file still being read (first time only)
+  const loaded = ref(false)
   const saving = ref(false)
 
   // Whatever else is in dns_config.json (debounce_ms, wifi_ifaces,
@@ -25,8 +26,39 @@ export const useDnsStore = defineStore('dns', () => {
   // saving from the UI never wipes advanced hand-edited options.
   let rawConfig = {}
 
-  async function refreshStatus() {
+  // `--status` spawns `cmd settings` a few times (~hundreds of ms). It is
+  // display-only, so it never blocks the toggle/inputs, and repeat visits
+  // inside STATUS_FRESH_MS reuse the last answer.
+  const STATUS_FRESH_MS = 5000
+  let statusAt = 0
+
+  async function refreshStatus({ force = false } = {}) {
+    if (!force && Date.now() - statusAt < STATUS_FRESH_MS) return
     status.value = await getDnsStatus()
+    statusAt = Date.now()
+  }
+
+  // True once the daemon has put Private DNS where it should be for the
+  // network it sees (or has nothing to do because there is no network).
+  function settled(st) {
+    if (!st?.running) return false
+    if (st.network === 'none') return true
+    const want = st.network === 'wifi' ? st.wifi_host : st.mobile_host
+    return st.current?.mode === 'hostname' && String(st.current.host).toLowerCase() === want
+  }
+
+  // Replaces a fixed 1.8 s sleep: poll until the daemon reports it is done
+  // (usually the first poll), give up after maxMs (e.g. manual override
+  // active — it will deliberately never "settle").
+  async function waitForSettle(maxMs = 2500) {
+    const deadline = Date.now() + maxMs
+    while (Date.now() < deadline) {
+      const st = await getDnsStatus()
+      status.value = st
+      statusAt = Date.now()
+      if (settled(st)) return
+      await new Promise((r) => setTimeout(r, 250))
+    }
   }
 
   async function load() {
@@ -36,10 +68,11 @@ export const useDnsStore = defineStore('dns', () => {
       enabled.value = rawConfig.enabled === true
       wifiHost.value = rawConfig.wifi_host ?? ''
       mobileHost.value = rawConfig.mobile_host || DNS_DEFAULT_MOBILE_HOST
-      await refreshStatus()
     } finally {
       loading.value = false
+      loaded.value = true
     }
+    refreshStatus({ force: true }) // background — not awaited
   }
 
   /** '' when fine, otherwise a short message for the toast. */
@@ -73,16 +106,15 @@ export const useDnsStore = defineStore('dns', () => {
 
       if (nextEnabled) {
         await startDnsDaemon()
-        // Give the daemon a moment to debounce + write before reading state.
-        await new Promise((r) => setTimeout(r, 1800))
+        await waitForSettle()
       } else {
         await stopDnsDaemon()
+        await refreshStatus({ force: true })
       }
-      await refreshStatus()
     } finally {
       saving.value = false
     }
   }
 
-  return { enabled, wifiHost, mobileHost, status, loading, saving, load, validate, save, refreshStatus }
+  return { enabled, wifiHost, mobileHost, status, loading, loaded, saving, load, validate, save, refreshStatus }
 })

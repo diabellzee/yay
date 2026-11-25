@@ -521,14 +521,30 @@ bool drain_netlink(int nl, const AutoDnsConfig& cfg)
 
 // ─── one evaluation ──────────────────────────────────────────────────────────
 
+// What the last evaluation concluded, so an event that did not change the
+// kind of network (v6 address/lifetime churn, a second address on the same
+// iface, ...) costs nothing — no `cmd settings` processes at all. Re-reading
+// Settings in that case could only ever (a) find nothing to do or (b) notice
+// a manual change, which decide() would respect anyway.
+struct EvalMemo {
+    NetKind net = NetKind::None;
+    bool settled = false; // last pass ended InSync / Applied / HoldManual
+};
+
 // Look at the network, compare with Settings, act per decide().
 // Returns a one-line summary (also logged when something changed).
-std::string evaluate(int sig_rd, Tracker& tr, const AutoDnsConfig& cfg)
+std::string evaluate(int sig_rd, Tracker& tr, EvalMemo& memo, const AutoDnsConfig& cfg)
 {
     const NetKind net = detect_network(cfg);
     if (net == NetKind::None) {
+        memo.settled = false; // coming back from no-network must re-check
         return "no usable network — Private DNS left untouched";
     }
+    if (memo.settled && net == memo.net) {
+        return std::string("net=") + net_name(net) + " unchanged — nothing to do";
+    }
+    memo.net = net;
+    memo.settled = false;
 
     const auto cur = read_current();
     if (!cur) {
@@ -544,6 +560,7 @@ std::string evaluate(int sig_rd, Tracker& tr, const AutoDnsConfig& cfg)
             return "no usable network";
 
         case Verdict::InSync:
+            memo.settled = true;
             if (d.resumed) {
                 const std::string msg = prefix + "settings back on module profile, "
                                         "automation resumed (" + fmt(d.target) + ")";
@@ -553,6 +570,7 @@ std::string evaluate(int sig_rd, Tracker& tr, const AutoDnsConfig& cfg)
             return prefix + "already " + fmt(d.target);
 
         case Verdict::HoldManual: {
+            memo.settled = true;
             const std::string msg = prefix + "manual Private DNS (" + fmt(*cur) +
                                     ") — automation paused";
             if (d.entered_hold) {
@@ -564,6 +582,7 @@ std::string evaluate(int sig_rd, Tracker& tr, const AutoDnsConfig& cfg)
         case Verdict::Apply: {
             if (apply_verified(sig_rd, *cur, d.target)) {
                 note_applied(tr, d.target);
+                memo.settled = true;
                 const std::string msg = prefix + fmt(*cur) + " -> " + fmt(d.target) +
                                         (d.resumed ? " (resumed)" : "");
                 Logger::info("yay_dns: " + msg);
@@ -654,6 +673,7 @@ int run_daemon()
     const auto debounce = [&cfg] { return std::chrono::milliseconds(cfg.debounce_ms); };
 
     Tracker tr;
+    EvalMemo memo;
     bool pending = true;               // initial evaluation, immediately
     bool quit = false;
     auto first = clock::now();         // first event of the current burst
@@ -667,6 +687,7 @@ int run_daemon()
             switch (load_config(fresh, &err)) {
                 case CfgState::Ok:
                     cfg = std::move(fresh);
+                    memo.settled = false; // new hosts/prefer: must re-check
                     Logger::info("yay_dns: config reloaded (wifi=" + cfg.wifi_host +
                                  ", mobile=" + cfg.mobile_host + ")");
                     pending = true;
@@ -727,7 +748,7 @@ int run_daemon()
 
         if (pending && clock::now() >= deadline) {
             pending = false;
-            static_cast<void>(evaluate(sig_rd.get(), tr, cfg));
+            static_cast<void>(evaluate(sig_rd.get(), tr, memo, cfg));
         }
     }
 
@@ -833,7 +854,8 @@ int cmd_once()
     }
 
     Tracker tr;
-    std::puts(evaluate(-1, tr, cfg).c_str()); // fd -1: poll() just sleeps
+    EvalMemo memo;
+    std::puts(evaluate(-1, tr, memo, cfg).c_str()); // fd -1: poll() just sleeps
     return 0;
 }
 

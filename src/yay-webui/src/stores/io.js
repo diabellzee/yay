@@ -1,4 +1,5 @@
 import { defineStore } from 'pinia'
+import { useHomeStore } from '@/stores/home'
 import { ref } from 'vue'
 import { readConfig, writeConfig, applyIO } from '@/helpers/bridge'
 
@@ -37,6 +38,7 @@ export const useIoStore = defineStore('io', () => {
         scheduler_preference: schedulerPreference.value,
         read_ahead_kb: readAheadKb.value,
       })
+      useHomeStore().invalidate()
     } finally {
       saving.value = false
     }

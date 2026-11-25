@@ -27,7 +27,7 @@
         <LoadingSpinner v-if="store.loading" />
         <div v-else-if="store.error" class="text-error text-sm py-4 text-center">{{ store.error }}</div>
         <div v-else class="space-y-1.5">
-          <div v-for="g in store.filtered" :key="g.package + g.note" class="md3-list">
+          <div v-for="g in store.filtered" :key="stableKey(g)" class="md3-list lazy-row">
             <Ripple @click="openEdit(store.indexOf(g))" class="md3-list-item w-full">
               <div class="flex items-center gap-3 px-4 py-3">
                 <ToggleSwitch :modelValue="g.enabled"
@@ -132,6 +132,7 @@
 
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
+import { stableKey } from '@/helpers/stableKey'
 import { useGamesStore } from '@/stores/games'
 import Ripple        from '@/components/ui/Ripple.vue'
 import ToggleSwitch  from '@/components/ui/ToggleSwitch.vue'

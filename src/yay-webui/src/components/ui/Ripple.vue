@@ -1,56 +1,46 @@
 <template>
   <div
-    ref="el"
     class="ripple-wrapper"
-    :class="{ 'non-touch': !touch }"
-    :style="hoverStyle"
+    :class="{ 'non-touch': !IS_TOUCH }"
     :tabindex="tabindex"
     @pointerdown="onDown"
     @keydown="onKey"
+    ref="el"
   >
     <slot />
   </div>
 </template>
 
+<script>
+// Evaluated once per page load, not once per Ripple instance.
+const IS_TOUCH =
+  typeof window !== 'undefined' &&
+  ('ontouchstart' in window || navigator.maxTouchPoints > 0)
+</script>
+
 <script setup>
-import { ref, computed, onMounted } from 'vue'
-const props = defineProps({
-  tabindex: { default: '0' },
-  color:    { default: null },
-})
-const el    = ref(null)
-const touch = ref(false)
-const hover = ref('')
+import { ref } from 'vue'
 
-const hoverStyle = computed(() =>
-  !touch.value && hover.value ? { '--hover-color': hover.value } : {}
-)
+defineProps({ tabindex: { default: '0' } })
+const el = ref(null)
 
-onMounted(() => {
-  touch.value = 'ontouchstart' in window || navigator.maxTouchPoints > 0
-  const c = getComputedStyle(el.value).color
-  hover.value = c.includes('rgba(0,0,0,0)')
-    ? 'rgba(255,255,255,0.09)'
-    : c.replace('rgb', 'rgba').replace(')', ', 0.09)')
-})
-
+// Colours (hover tint + ripple) come from CSS `color-mix(currentColor …)`,
+// so mounting a Ripple costs no getComputedStyle / forced style recalc —
+// which previously ran once per instance (one per Games row) and again on
+// every tap.
 function onDown(e) {
   const node = el.value
-  const r    = node.getBoundingClientRect()
+  const r = node.getBoundingClientRect()
   const size = Math.max(r.width, r.height)
-  const dur  = Math.min(0.8, Math.max(0.2, 0.2 + (r.width / 800) * 0.3))
+  const dur = Math.min(0.8, Math.max(0.2, 0.2 + (r.width / 800) * 0.3))
   const span = document.createElement('span')
   span.className = 'ripple'
-  const col = getComputedStyle(node).color
-  span.style.cssText = `
-    width:${size}px;height:${size}px;
-    left:${e.clientX - r.left - size / 2}px;
-    top:${e.clientY - r.top - size / 2}px;
-    animation-duration:${dur}s;
-    transition:opacity ${dur}s ease;
-    background-color:${col.replace('rgb', 'rgba').replace(')', ', 0.2)')};
-  `
+  span.style.cssText =
+    `width:${size}px;height:${size}px;` +
+    `left:${e.clientX - r.left - size / 2}px;top:${e.clientY - r.top - size / 2}px;` +
+    `animation-duration:${dur}s;transition:opacity ${dur}s ease;`
   node.appendChild(span)
+
   const end = () => {
     span.classList.add('end')
     setTimeout(() => span.remove(), dur * 1000)
@@ -62,6 +52,9 @@ function onDown(e) {
 }
 
 function onKey(e) {
-  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); el.value.click() }
+  if (e.key === 'Enter' || e.key === ' ') {
+    e.preventDefault()
+    el.value.click()
+  }
 }
 </script>

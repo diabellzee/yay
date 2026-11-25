@@ -1,4 +1,5 @@
 import { defineStore } from 'pinia'
+import { useHomeStore } from '@/stores/home'
 import { ref, computed } from 'vue'
 import { readConfig, writeConfig, applyGame } from '@/helpers/bridge'
 
@@ -9,14 +10,15 @@ export const useGamesStore = defineStore('games', () => {
   const error   = ref('')
   const searchQ = ref('')
 
-  const filtered = computed(() =>
-    searchQ.value
-      ? games.value.filter(g =>
-          g.package.includes(searchQ.value) ||
-          (g.note ?? '').toLowerCase().includes(searchQ.value.toLowerCase())
-        )
-      : games.value
-  )
+  const filtered = computed(() => {
+    const q = searchQ.value
+    if (!q) return games.value
+    const lq = q.toLowerCase()
+    return games.value.filter(g =>
+      g.package.includes(q) ||
+      (g.note ?? '').toLowerCase().includes(lq)
+    )
+  })
 
   async function load() {
     loading.value = true
@@ -39,6 +41,7 @@ export const useGamesStore = defineStore('games', () => {
         version: 1,
         games: games.value,
       })
+      useHomeStore().invalidate()
     } finally {
       saving.value = false
     }

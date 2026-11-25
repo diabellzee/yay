@@ -1,4 +1,5 @@
 import { defineStore } from 'pinia'
+import { useHomeStore } from '@/stores/home'
 import { ref, computed } from 'vue'
 import { readConfig, writeConfig, applyRules, dryRunRules } from '@/helpers/bridge'
 
@@ -10,15 +11,16 @@ export const useRulesStore = defineStore('rules', () => {
   const error      = ref('')
   const searchQ    = ref('')
 
-  const filteredComponents = computed(() =>
-    searchQ.value
-      ? components.value.filter(c =>
-          c.package.includes(searchQ.value) ||
-          c.component.includes(searchQ.value) ||
-          (c.note ?? '').toLowerCase().includes(searchQ.value.toLowerCase())
-        )
-      : components.value
-  )
+  const filteredComponents = computed(() => {
+    const q = searchQ.value
+    if (!q) return components.value
+    const lq = q.toLowerCase()
+    return components.value.filter(c =>
+      c.package.includes(q) ||
+      c.component.includes(q) ||
+      (c.note ?? '').toLowerCase().includes(lq)
+    )
+  })
 
   async function load() {
     loading.value = true
@@ -43,6 +45,7 @@ export const useRulesStore = defineStore('rules', () => {
         components: components.value,
         appops:     appops.value,
       })
+      useHomeStore().invalidate()
     } finally {
       saving.value = false
     }

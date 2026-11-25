@@ -13,6 +13,6 @@
 defineProps({ show: Boolean, message: String })
 </script>
 <style scoped>
-.snack-enter-active, .snack-leave-active { transition: all 0.2s ease; }
+.snack-enter-active, .snack-leave-active { transition: opacity 0.2s ease, transform 0.2s ease; }
 .snack-enter-from, .snack-leave-to { opacity: 0; transform: translate(-50%, 8px); }
 </style>

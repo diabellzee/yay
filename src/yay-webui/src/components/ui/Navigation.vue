@@ -1,7 +1,7 @@
 <template>
   <nav ref="navEl"
     class="fixed bottom-0 left-0 right-0 flex items-end
-           bg-surface-container/95 backdrop-blur-md shadow-lg z-50
+           bg-surface-container shadow-lg z-50
            md:left-0 md:top-0 md:bottom-0 md:right-auto md:w-20 md:h-full md:flex-col md:justify-center"
     :style="{
       paddingBottom: 'var(--window-inset-bottom, env(safe-area-inset-bottom, 0px))',
@@ -11,7 +11,7 @@
         class="flex-1 flex flex-col items-center justify-center gap-1 py-1 md:flex-none md:w-full
                text-xs font-medium transition-colors duration-200 no-underline"
         :class="active(item) ? 'text-on-surface' : 'text-on-surface-variant'">
-        <div class="h-8 flex items-center justify-center rounded-full px-4 transition-all duration-200"
+        <div class="h-8 flex items-center justify-center rounded-full px-4 transition-colors duration-200"
           :class="active(item) ? 'bg-secondary-container' : ''">
           <component :is="item.icon" :active="active(item)" />
         </div>

@@ -131,7 +131,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onActivated } from 'vue'
 import {
   isWatcherEnabled,
   setWatcherEnabled,
@@ -169,6 +169,12 @@ function showToast(msg) {
   toast.value = msg
   setTimeout(() => (toast.value = ''), 2500)
 }
+
+// Config fields load once (re-reading would clobber unsaved typing); only the
+// read-only status line refreshes when the tab is shown again.
+onActivated(() => {
+  if (dns.loaded) dns.refreshStatus()
+})
 
 onMounted(async () => {
   dns.load()

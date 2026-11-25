@@ -4,7 +4,7 @@
       <div class="max-w-2xl mx-auto px-5 pt-5 pb-2">
         <div class="flex items-center justify-between">
           <h1 class="text-xl font-semibold text-on-surface">Log</h1>
-          <button @click="store.load()" title="Refresh"
+          <button @click="store.load({ force: true })" title="Refresh"
             class="w-9 h-9 rounded-full bg-surface-container flex items-center justify-center
                    text-on-surface-variant active:bg-surface-container-high transition-colors">
             <RefreshIcon />
@@ -41,16 +41,20 @@
       </div>
     </div>
 
-    <div class="scrollbar-hidden pb-safe-nav flex-1 min-h-0 overflow-y-auto">
+    <div ref="scroller" class="scrollbar-hidden pb-safe-nav flex-1 min-h-0 overflow-y-auto">
       <div class="max-w-2xl mx-auto px-3 py-2">
         <LoadingSpinner v-if="store.loading" />
         <div v-else-if="!logText" class="text-center py-8 text-on-surface-variant text-sm">
           No log available
         </div>
         <div v-else class="bg-surface-container rounded-2xl p-3 overflow-x-auto">
-          <div v-for="(line, i) in filteredLines" :key="i"
+          <button v-if="hiddenCount" @click="showAll = true"
+            class="w-full mb-2 py-1.5 rounded-lg text-xs font-medium bg-surface-container-high text-on-surface-variant active:opacity-80">
+            Show {{ hiddenCount }} older lines
+          </button>
+          <div v-for="l in visibleLines" :key="l.i"
             class="text-xs font-mono leading-5 whitespace-pre-wrap break-all"
-            :class="lineClass(line)">{{ line }}</div>
+            :class="l.cls">{{ l.text }}</div>
         </div>
       </div>
     </div>
@@ -58,13 +62,19 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, watch, nextTick, onActivated } from 'vue'
 import { useLogStore } from '@/stores/log'
 import LoadingSpinner from '@/components/ui/LoadingSpinner.vue'
 import RefreshIcon from '@/components/icons/Refresh.vue'
 
 const store = useLogStore()
 const activeFilter = ref('')
+const showAll = ref(false)
+const scroller = ref(null)
+
+// Newest lines are what matters; a 256 KB log is ~2500 lines, and putting
+// every one in the DOM makes the tab slow to open and to filter.
+const TAIL_LINES = 300
 
 const filters = [
   { key: 'E', label: '🔴 Error',   active: 'bg-error/15 border-error text-error' },
@@ -77,31 +87,57 @@ const logText = computed(() =>
   store.tab === 'current' ? store.current : store.previous
 )
 
-const allLines = computed(() =>
-  logText.value ? logText.value.split('\n').filter(Boolean) : []
-)
-
 // Matches yay_apply's logger.cpp format exactly:
 // [MM-DD HH:MM:SS X file.cpp:123] message
 const LEVEL_RE = /^\[\d{2}-\d{2} \d{2}:\d{2}:\d{2} ([EWID?]) /
 
-function lineLevel(line) {
-  return line.match(LEVEL_RE)?.[1] ?? null
+const LEVEL_CLASS = {
+  E: 'text-error',
+  W: 'text-yellow-400',
+  I: 'text-on-surface',
 }
 
-const filteredLines = computed(() => {
-  if (!activeFilter.value) return allLines.value
-  return allLines.value.filter((l) => lineLevel(l) === activeFilter.value)
+// Parsed ONCE per log text. Changing the filter or the tail window only
+// slices this array — no more splitting + regex per line per render.
+const parsed = computed(() => {
+  const text = logText.value
+  if (!text) return []
+  const out = []
+  for (const line of text.split('\n')) {
+    if (!line) continue
+    const level = LEVEL_RE.exec(line)?.[1] ?? null
+    out.push({ i: out.length, text: line, level, cls: LEVEL_CLASS[level] ?? 'text-on-surface-variant' })
+  }
+  return out
 })
 
-function lineClass(line) {
-  const level = lineLevel(line)
-  if (level === 'E') return 'text-error'
-  if (level === 'W') return 'text-yellow-400'
-  if (level === 'I') return 'text-on-surface'
-  if (level === 'D') return 'text-on-surface-variant'
-  return 'text-on-surface-variant'
+const filtered = computed(() =>
+  activeFilter.value ? parsed.value.filter((l) => l.level === activeFilter.value) : parsed.value
+)
+
+const hiddenCount = computed(() =>
+  showAll.value ? 0 : Math.max(0, filtered.value.length - TAIL_LINES)
+)
+
+const visibleLines = computed(() =>
+  hiddenCount.value ? filtered.value.slice(-TAIL_LINES) : filtered.value
+)
+
+function scrollToEnd() {
+  nextTick(() => {
+    const el = scroller.value
+    if (el) el.scrollTop = el.scrollHeight
+  })
 }
 
-onMounted(() => store.load())
+// Land on the newest entries after a (re)load, tab switch or filter change.
+watch([logText, activeFilter], () => {
+  showAll.value = false
+  scrollToEnd()
+})
+
+watch(() => store.tab, () => store.load())
+
+// Shown again via keep-alive: pick up new log lines, without a spinner.
+onActivated(() => store.load())
 </script>

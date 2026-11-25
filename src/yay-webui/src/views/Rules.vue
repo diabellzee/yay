@@ -51,7 +51,7 @@
         <!-- Components tab -->
         <template v-else-if="tab === 'components'">
           <div class="space-y-1.5">
-            <div v-for="(c, i) in store.filteredComponents" :key="i" class="md3-list">
+            <div v-for="c in store.filteredComponents" :key="stableKey(c)" class="md3-list lazy-row">
               <div class="flex items-start px-4 py-3 gap-3">
                 <ToggleSwitch :modelValue="c.enabled" @update:modelValue="store.toggleComponent(store.components.indexOf(c))" class="mt-0.5 shrink-0" />
                 <div class="flex-1 min-w-0">
@@ -86,7 +86,7 @@
         <!-- Appops tab -->
         <template v-else>
           <div class="space-y-1.5">
-            <div v-for="(a, i) in store.appops" :key="i" class="md3-list">
+            <div v-for="(a, i) in store.appops" :key="stableKey(a)" class="md3-list lazy-row">
               <div class="flex items-start px-4 py-3 gap-3">
                 <ToggleSwitch :modelValue="a.enabled" @update:modelValue="store.toggleAppop(i)" class="mt-0.5 shrink-0" />
                 <div class="flex-1 min-w-0">
@@ -220,6 +220,7 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
+import { stableKey } from '@/helpers/stableKey'
 import { useRulesStore } from '@/stores/rules'
 import ToggleSwitch   from '@/components/ui/ToggleSwitch.vue'
 import Modal          from '@/components/ui/Modal.vue'

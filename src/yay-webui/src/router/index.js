@@ -2,12 +2,23 @@ import { createRouter, createWebHistory } from 'vue-router'
 import { WebUI } from 'webuix'
 
 import Home from '@/views/Home.vue'
-import Rules from '@/views/Rules.vue'
-import Games from '@/views/Games.vue'
-import Io from '@/views/Io.vue'
-import Log from '@/views/Log.vue'
-import Settings from '@/views/Settings.vue'
 import { isWebUIX, onHardwareBack } from '@/helpers/bridge'
+
+// Only Home is in the entry chunk; the rest are split out so the first paint
+// parses less JS. prefetchViews() (called once the app is idle) pulls them in
+// the background, so tapping a tab never waits on a network/disk round-trip.
+const loaders = [
+  () => import('@/views/Rules.vue'),
+  () => import('@/views/Games.vue'),
+  () => import('@/views/Io.vue'),
+  () => import('@/views/Log.vue'),
+  () => import('@/views/Settings.vue'),
+]
+const [Rules, Games, Io, Log, Settings] = loaders
+
+export function prefetchViews() {
+  for (const load of loaders) load().catch(() => {})
+}
 
 const routes = [
   { path: '/', name: 'Home', component: Home },

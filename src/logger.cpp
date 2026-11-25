@@ -194,6 +194,28 @@ void rotate_if_needed(LoggerState& log_state)
     static_cast<void>(::rename(log_state.path.c_str(), rotated.c_str()));
 }
 
+// True when another process rotated the log out from under us (renamed
+// run.log -> run.log.1, as yay_apply does at boot and on size). Our fd then
+// still points at the renamed file, so a long-lived process (yay_dns,
+// yay_watch) would keep appending to run.log.1 forever while run.log — what
+// the WebUI shows as "Current" — stays empty. Compare the open file's
+// identity with whatever the path names now. A vanished path counts as
+// rotated too: reopening (O_CREAT) recreates it.
+[[nodiscard]]
+bool file_was_rotated_away(const LoggerState& log_state) noexcept
+{
+    struct stat on_path {};
+    if (::stat(log_state.path.c_str(), &on_path) != 0) {
+        return errno == ENOENT;
+    }
+
+    struct stat opened {};
+    if (::fstat(log_state.file.get(), &opened) != 0) {
+        return false;
+    }
+    return opened.st_ino != on_path.st_ino || opened.st_dev != on_path.st_dev;
+}
+
 void open_log_file(LoggerState& log_state)
 {
     if (log_state.path.empty()) {
@@ -219,6 +241,9 @@ void write_file_log(
         return;
     }
 
+    if (file_was_rotated_away(log_state)) {
+        log_state.file.reset();
+    }
     rotate_if_needed(log_state);
     if (!log_state.file.valid()) {
         open_log_file(log_state);

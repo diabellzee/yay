@@ -327,7 +327,10 @@ changes (switch, manual override detected, resume).
   only when mobile data is off or there is no SIM data. Toggling mobile data
   is picked up at the next network event; if your ROM keeps the data
   interface up after toggling, it may lag until one occurs.
-- Manual changes are noticed at the next network event, not instantly.
+- Manual changes are noticed at the next network event that changes the kind
+  of network, not instantly. Events that don't change it (IPv6 address churn,
+  a second address on the same interface) are skipped without reading
+  Settings at all, so they cost no `cmd` processes.
 - Stopping/removing the module leaves Private DNS at whatever it was last set to.
 - A VPN that sets its own DNS takes precedence over Private DNS, as on stock Android.
 
@@ -443,6 +446,20 @@ yay/
   Settings. See the dedicated section above.
 - `ConfigKind::DnsConfig` structural validation for `dns_config.json`.
 - Host-side unit tests for the policy logic, run in CI.
+- **Fix:** the logger now notices when another process rotated `run.log`
+  out from under it (by inode). Long-lived `yay_dns` / `yay_watch` used to
+  keep appending to `run.log.1`, leaving the WebUI's "Current" tab empty.
+- `yay_dns`: events that don't change the network kind no longer spawn
+  `cmd settings` (30 such events: 60 spawns → 0).
+- WebUI: navbar no longer uses `backdrop-blur`; non-Home views are
+  code-split and prefetched when idle (entry JS 183 → 134 KB); Home and Log
+  refresh when their tab is shown again (stale-while-revalidate, no spinner
+  flash — Home counts used to stay stale after editing rules); Log parses
+  once and renders only the newest 300 lines (older on demand) and reads
+  `run.log.1` only when its tab opens; Rules/Games rows use identity keys and
+  `content-visibility`; Ripple no longer calls `getComputedStyle`; Auto
+  Private DNS toggle no longer waits for `--status`, and Save waits for the
+  daemon to settle instead of a fixed 1.8 s.
 
 **v1.2**
 - Merged the standalone "SystemUI MediaMetadata NPE Fix" Zygisk module into

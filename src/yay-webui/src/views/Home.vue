@@ -90,7 +90,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onActivated } from 'vue'
 import { useHomeStore } from '@/stores/home'
 import { applyFull } from '@/helpers/bridge'
 import Ripple from '@/components/ui/Ripple.vue'
@@ -114,14 +114,15 @@ function showToast(msg, ms = 2500) {
   setTimeout(() => (toast.value = ''), ms)
 }
 
-onMounted(() => store.load())
+// Fires on first mount AND every time the keep-alive'd tab is shown again.
+onActivated(() => store.load())
 
 async function runFull() {
   applying.value = true
   try {
     const { errno, stderr } = await applyFull()
     showToast(errno === 0 ? 'Applied ✓' : `Error: ${stderr}`)
-    if (errno === 0) await store.load()
+    if (errno === 0) await store.load({ force: true })
   } finally {
     applying.value = false
   }
