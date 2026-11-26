@@ -1,13 +1,14 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { readConfig, isWatcherEnabled, bridgeName, PATHS } from '@/helpers/bridge'
+import { readSnapshot, bridgeName, PATHS } from '@/helpers/bridge'
+import { YAY_VERSION } from '@/helpers/version'
 
 // Re-visiting Home inside this window reuses what it already has instead of
 // re-reading three config files (each a root-shell exec on KernelSU).
 const FRESH_MS = 3000
 
 export const useHomeStore = defineStore('home', () => {
-  const version = ref('1.3')
+  const version = ref(YAY_VERSION)
   const componentCount = ref(0)
   const appopCount = ref(0)
   const gameCount = ref(0)
@@ -28,12 +29,16 @@ export const useHomeStore = defineStore('home', () => {
   async function doLoad() {
     bridge.value = bridgeName()
     try {
-      const [rules, games, io, watcher] = await Promise.all([
-        readConfig('rules.json').catch(() => ({ components: [], appops: [] })),
-        readConfig('game_config.json').catch(() => ({ games: [] })),
-        readConfig('io_config.json').catch(() => ({ scheduler_preference: [] })),
-        isWatcherEnabled().catch(() => false),
-      ])
+      // First load reuses the startup snapshot (no exec). Later refreshes do
+      // ONE batched read for all three files + the watcher flag, instead of
+      // four separate root-shell spawns.
+      const { configs, watcher } = await readSnapshot(
+        ['rules.json', 'game_config.json', 'io_config.json'],
+        { fresh: loaded.value },
+      )
+      const rules = configs['rules.json'] ?? { components: [], appops: [] }
+      const games = configs['game_config.json'] ?? { games: [] }
+      const io = configs['io_config.json'] ?? { scheduler_preference: [] }
       componentCount.value = (rules.components ?? []).filter((c) => c.enabled !== false).length
       appopCount.value = (rules.appops ?? []).filter((a) => a.enabled !== false).length
       gameCount.value = (games.games ?? []).filter((g) => g.enabled !== false).length

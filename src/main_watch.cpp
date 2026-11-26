@@ -18,14 +18,34 @@ static constexpr const char* CONFIG_DIR = "/data/adb/yay/config";
 static constexpr const char* LOG_FILE   = "/data/adb/yay/run.log";
 static constexpr const char* YAY_APPLY  = "/data/adb/modules/yay/bin/yay_apply";
 static constexpr int         DEBOUNCE_MS = 1500;
-static constexpr const char* WATCH_CONFIG_FLAG = "/data/adb/modules/yay/enable_watch";
+// The flag lives in /data/adb/yay (persistent across module updates). The old
+// location inside the module directory is wiped on every update — silently
+// turning the watcher off — so it is only honoured as a legacy fallback;
+// service.sh/customize.sh migrate it.
+static constexpr const char* WATCH_CONFIG_FLAG        = "/data/adb/yay/enable_watch";
+static constexpr const char* WATCH_CONFIG_FLAG_LEGACY = "/data/adb/modules/yay/enable_watch";
 
 static bool flag_exists(const char* path) {
     return access(path, F_OK) == 0;
 }
 
 static volatile sig_atomic_t g_stop = 0;
-static void on_signal(int) { g_stop = 1; }
+
+// Self-pipe: the handler writes a byte so a poll() with NO timeout wakes for
+// SIGTERM/SIGINT. That replaces the old "poll(5000) just to re-check g_stop"
+// tick, which woke the process every 5 s forever — 17k wakeups/day doing
+// nothing — and still had a window where a signal landing between the
+// g_stop check and poll() was only noticed on the next tick.
+static int g_sig_wr = -1;
+static void on_signal(int) {
+    const int saved = errno;
+    g_stop = 1;
+    if (g_sig_wr >= 0) {
+        const char c = 0;
+        static_cast<void>(!write(g_sig_wr, &c, 1));
+    }
+    errno = saved;
+}
 
 struct FileMode {
     const char* name;
@@ -67,7 +87,9 @@ static void spawn_apply(const char* mode) {
 
     // Wait for completion — watcher is already async from main flow
     int status = 0;
-    waitpid(pid, &status, 0);
+    while (waitpid(pid, &status, 0) < 0) {
+        if (errno != EINTR) { status = -1; break; }
+    }
     int code = WIFEXITED(status) ? WEXITSTATUS(status) : -1;
     Logger::info(std::string("yay_watch: yay_apply ") + mode +
                  " exit=" + std::to_string(code));
@@ -101,10 +123,21 @@ int main(int /*argc*/, char* /*argv*/[]) {
     Logger::init("yay_watch", LOG_FILE);
     Logger::info("yay_watch: starting");
 
-    signal(SIGTERM, on_signal);
-    signal(SIGINT,  on_signal);
+    int sigpipe[2] = {-1, -1};
+    if (pipe2(sigpipe, O_CLOEXEC | O_NONBLOCK) != 0) {
+        Logger::err("yay_watch: pipe2 failed");
+        _exit(1);
+    }
+    g_sig_wr = sigpipe[1];
 
-    const bool config_watch_enabled = flag_exists(WATCH_CONFIG_FLAG);
+    struct sigaction sa {};
+    sa.sa_handler = on_signal;
+    sigemptyset(&sa.sa_mask);
+    sigaction(SIGTERM, &sa, nullptr);
+    sigaction(SIGINT,  &sa, nullptr);
+
+    const bool config_watch_enabled =
+        flag_exists(WATCH_CONFIG_FLAG) || flag_exists(WATCH_CONFIG_FLAG_LEGACY);
 
     if (!config_watch_enabled) {
         // Shouldn't normally happen — service.sh only starts yay_watch at
@@ -139,20 +172,23 @@ int main(int /*argc*/, char* /*argv*/[]) {
     alignas(struct inotify_event)
     char buf[64 * (sizeof(struct inotify_event) + NAME_MAX + 1)];
 
-    struct pollfd pfd{ifd, POLLIN, 0};
+    struct pollfd pfds[2] = {
+        {ifd, POLLIN, 0},
+        {sigpipe[0], POLLIN, 0},
+    };
 
     Logger::info(std::string("yay_watch: watching ") + CONFIG_DIR);
 
     while (!g_stop) {
-        // 5s tick — keeps g_stop check responsive without busy-wait
-        int ret = poll(&pfd, 1, 5000);
+        // Sleep until inotify has something or a stop signal arrives.
+        int ret = poll(pfds, 2, -1);
         if (ret < 0) {
             if (errno == EINTR) continue;
             Logger::err("yay_watch: poll error");
             break;
         }
-        if (ret == 0) continue;
-        if (!(pfd.revents & POLLIN)) continue;
+        if (pfds[1].revents & POLLIN) break;   // stop requested
+        if (!(pfds[0].revents & POLLIN)) continue;
 
         ssize_t len = read(ifd, buf, sizeof(buf));
         if (len <= 0) continue;
@@ -171,14 +207,17 @@ int main(int /*argc*/, char* /*argv*/[]) {
         // changes a moment later (e.g. a sync tool touching files one at
         // a time), still gets picked up instead of silently missed.
         Logger::debug("yay_watch: change detected, debouncing...");
+        bool stopping = false;
         while (true) {
-            int d = poll(&pfd, 1, DEBOUNCE_MS);
+            int d = poll(pfds, 2, DEBOUNCE_MS);
             if (d <= 0) break;
+            if (pfds[1].revents & POLLIN) { stopping = true; break; }
             const auto drained = read(ifd, buf, sizeof(buf));
             if (drained > 0) {
                 scan_events(buf, drained, triggered);
             }
         }
+        if (stopping) break;   // shutting down: don't start an apply now
 
         for (size_t i = 0; i < kModeCount; ++i) {
             if (triggered[i]) {

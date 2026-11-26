@@ -2,23 +2,18 @@ import { createRouter, createWebHistory } from 'vue-router'
 import { WebUI } from 'webuix'
 
 import Home from '@/views/Home.vue'
+import Rules from '@/views/Rules.vue'
+import Games from '@/views/Games.vue'
+import Io from '@/views/Io.vue'
+import Log from '@/views/Log.vue'
+import Settings from '@/views/Settings.vue'
+
+// Deliberately NOT code-split. On KernelSU the WebUI's assets are served
+// from the module directory through a root file read, so every extra chunk is
+// another round-trip — and a tab tapped before its chunk arrived would stall
+// with no visual feedback. One JS + one CSS file is the cheaper, smoother
+// shape for this host (the views are ~50 KB of the bundle).
 import { isWebUIX, onHardwareBack } from '@/helpers/bridge'
-
-// Only Home is in the entry chunk; the rest are split out so the first paint
-// parses less JS. prefetchViews() (called once the app is idle) pulls them in
-// the background, so tapping a tab never waits on a network/disk round-trip.
-const loaders = [
-  () => import('@/views/Rules.vue'),
-  () => import('@/views/Games.vue'),
-  () => import('@/views/Io.vue'),
-  () => import('@/views/Log.vue'),
-  () => import('@/views/Settings.vue'),
-]
-const [Rules, Games, Io, Log, Settings] = loaders
-
-export function prefetchViews() {
-  for (const load of loaders) load().catch(() => {})
-}
 
 const routes = [
   { path: '/', name: 'Home', component: Home },

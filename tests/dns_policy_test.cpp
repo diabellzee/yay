@@ -199,6 +199,17 @@ void test_pick_network()
     CHECK(!parse_dns_config(Json{{"enabled", false}, {"prefer", "both"}}, &err).has_value());
 }
 
+void test_debounce_keys()
+{
+    std::string err;
+    auto d = parse_dns_config(Json{{"enabled", false}}, &err);
+    CHECK(d && d->debounce_ms == 1500 && d->cellular_debounce_ms == 300);
+    auto lo = parse_dns_config(Json{{"enabled", false}, {"cellular_debounce_ms", 1}}, &err);
+    CHECK(lo && lo->cellular_debounce_ms == kMinFastDebounceMs);
+    auto hi = parse_dns_config(Json{{"enabled", false}, {"cellular_debounce_ms", 99999999}}, &err);
+    CHECK(hi && hi->cellular_debounce_ms == kMaxDebounceMs);
+}
+
 void test_decide_basic()
 {
     const AutoDnsConfig c = make_cfg();
@@ -389,6 +400,7 @@ int main()
     test_classify();
     test_addresses();
     test_pick_network();
+    test_debounce_keys();
     test_decide_basic();
     test_handover_flow();
     test_manual_override();

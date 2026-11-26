@@ -27,6 +27,7 @@
 #include "logger.h"
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cerrno>
 #include <chrono>
@@ -34,6 +35,7 @@
 #include <cstdio>
 #include <cstring>
 #include <climits>
+#include <span>
 #include <string>
 
 #include <fcntl.h>
@@ -247,11 +249,11 @@ std::string trim_ws(std::string s)
     return s;
 }
 
+// Turn one `cmd settings get` result into a value.
 // nullopt = could not read (service not up yet, error). "" = key unset.
 [[nodiscard]]
-std::optional<std::string> settings_get(const char* key)
+std::optional<std::string> parse_setting(const ExecResult& r)
 {
-    const auto r = exec_cmd({"cmd", "settings", "get", "global", key}, 5);
     if (!r.ok()) {
         return std::nullopt;
     }
@@ -269,6 +271,37 @@ std::optional<std::string> settings_get(const char* key)
 }
 
 [[nodiscard]]
+std::optional<std::string> settings_get(const char* key)
+{
+    return parse_setting(exec_cmd({"cmd", "settings", "get", "global", key}, 5));
+}
+
+// Read several keys CONCURRENTLY. Each `cmd settings get` is a process spawn
+// plus a binder round-trip into system_server and is latency-bound, not
+// CPU-bound, so N reads in parallel cost about one. This sits on the
+// handover critical path (debounce -> read -> write -> verify), where the
+// DNS is broken until the write lands, so every serial spawn counts.
+[[nodiscard]]
+std::vector<std::optional<std::string>> settings_get_many(std::span<const char* const> keys)
+{
+    std::vector<std::vector<std::string>> cmds;
+    cmds.reserve(keys.size());
+    for (const char* key : keys) {
+        cmds.push_back({"cmd", "settings", "get", "global", key});
+    }
+
+    const auto results = exec_batch(
+        cmds, keys.size(), std::chrono::seconds(5), std::chrono::seconds(10));
+
+    std::vector<std::optional<std::string>> out;
+    out.reserve(results.size());
+    for (const auto& r : results) {
+        out.push_back(parse_setting(r));
+    }
+    return out;
+}
+
+[[nodiscard]]
 bool settings_put(const char* key, const std::string& value)
 {
     return exec_cmd({"cmd", "settings", "put", "global", key, value}, 5).ok();
@@ -277,43 +310,91 @@ bool settings_put(const char* key, const std::string& value)
 [[nodiscard]]
 std::optional<DnsSetting> read_current()
 {
-    auto mode = settings_get(kKeyMode);
-    auto host = settings_get(kKeyHost);
-    if (!mode || !host) {
+    static constexpr std::array<const char*, 2> kKeys{kKeyMode, kKeyHost};
+    auto v = settings_get_many(kKeys);
+    if (v.size() != kKeys.size() || !v[0] || !v[1]) {
         return std::nullopt;
     }
-    return DnsSetting{std::move(*mode), std::move(*host)};
+    return DnsSetting{std::move(*v[0]), std::move(*v[1])};
 }
 
 // Specifier first, mode second: when the mode flips to "hostname" the
 // specifier is already the right one, so the system never briefly tries to
 // validate a stale host. If mode is already "hostname" only the specifier
 // write happens — that alone makes ConnectivityService re-resolve.
+struct Wrote {
+    bool host = false;
+    bool mode = false;
+};
+
 [[nodiscard]]
-bool write_target(const DnsSetting& cur, const DnsSetting& target)
+bool write_target(const DnsSetting& cur, const DnsSetting& target, Wrote& wrote)
 {
-    if (cur.host != target.host && !settings_put(kKeyHost, target.host)) {
-        return false;
+    wrote = {};
+    if (cur.host != target.host) {
+        if (!settings_put(kKeyHost, target.host)) {
+            return false;
+        }
+        wrote.host = true;
     }
-    if (cur.mode != target.mode && !settings_put(kKeyMode, target.mode)) {
-        return false;
+    if (cur.mode != target.mode) {
+        if (!settings_put(kKeyMode, target.mode)) {
+            return false;
+        }
+        wrote.mode = true;
     }
     return true;
 }
 
-// Write + read back. Only a verified write counts as applied.
+// Read back ONLY what was written, in parallel. On the usual handover the
+// mode is already "hostname", so this is one spawn instead of two serial
+// ones for a full re-read.
+[[nodiscard]]
+bool verify_written(const DnsSetting& target, const Wrote& wrote)
+{
+    std::array<const char*, 2> keys{};
+    size_t n = 0;
+    if (wrote.host) keys[n++] = kKeyHost;
+    if (wrote.mode) keys[n++] = kKeyMode;
+    if (n == 0) {
+        return true;
+    }
+
+    const auto v = settings_get_many(std::span<const char* const>(keys.data(), n));
+    if (v.size() != n) {
+        return false;
+    }
+
+    for (size_t i = 0; i < n; ++i) {
+        if (!v[i]) {
+            return false;
+        }
+        const bool is_host = (keys[i] == kKeyHost);
+        const DnsSetting probe{is_host ? target.mode : *v[i], is_host ? *v[i] : target.host};
+        if (!same_setting(probe, target)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// Write + verify. Only a verified write counts as applied.
 [[nodiscard]]
 bool apply_verified(int sig_rd, DnsSetting cur, const DnsSetting& target)
 {
     for (int attempt = 1; attempt <= kApplyAttempts && !g_stop; ++attempt) {
-        if (write_target(cur, target)) {
-            const auto now = read_current();
-            if (now && same_setting(*now, target)) {
+        Wrote wrote;
+        if (write_target(cur, target, wrote) && verify_written(target, wrote)) {
+            return true;
+        }
+
+        // Something did not stick: re-read the real state to base the next
+        // attempt on, instead of assuming.
+        if (const auto now = read_current()) {
+            if (same_setting(*now, target)) {
                 return true;
             }
-            if (now) {
-                cur = *now;
-            }
+            cur = *now;
         }
         Logger::warn("yay_dns: write attempt " + std::to_string(attempt) + "/" +
                      std::to_string(kApplyAttempts) + " did not stick");
@@ -329,16 +410,18 @@ bool apply_verified(int sig_rd, DnsSetting cur, const DnsSetting& target)
 // Which kind of network currently has a usable address? When both are up,
 // cfg.prefer_cellular decides (default: the SIM wins, so the carrier-safe
 // profile is in effect whenever mobile data is actually available).
-[[nodiscard]]
-NetKind detect_network(const AutoDnsConfig& cfg)
+// Which of the two networks have a usable address right now. Pure
+// getifaddrs() — no process spawned — so it is cheap enough to call on
+// every netlink event.
+void scan_interfaces(const AutoDnsConfig& cfg, bool& wifi, bool& cell)
 {
+    wifi = false;
+    cell = false;
+
     ifaddrs* list = nullptr;
     if (::getifaddrs(&list) != 0) {
-        return NetKind::None;
+        return;
     }
-
-    bool wifi = false;
-    bool cell = false;
 
     for (const ifaddrs* p = list; p != nullptr; p = p->ifa_next) {
         if (p->ifa_addr == nullptr || p->ifa_name == nullptr) {
@@ -374,6 +457,14 @@ NetKind detect_network(const AutoDnsConfig& cfg)
     }
 
     ::freeifaddrs(list);
+}
+
+[[nodiscard]]
+NetKind detect_network(const AutoDnsConfig& cfg)
+{
+    bool wifi = false;
+    bool cell = false;
+    scan_interfaces(cfg, wifi, cell);
 
     // Only when BOTH are up does the mobile-data toggle matter. A phone with
     // mobile data switched off still keeps an IMS/VoLTE cellular interface
@@ -670,7 +761,18 @@ int run_daemon()
     }
 
     using clock = std::chrono::steady_clock;
-    const auto debounce = [&cfg] { return std::chrono::milliseconds(cfg.debounce_ms); };
+    // Window for the burst in progress. Cellular-only -> the urgent
+    // direction (see AutoDnsConfig::cellular_debounce_ms); anything else ->
+    // the full flap-resistant window. Re-derived on every relevant event, so
+    // a burst that ends up on Wi-Fi stretches back to the long window.
+    const auto window = [&cfg] {
+        bool wifi = false;
+        bool cell = false;
+        scan_interfaces(cfg, wifi, cell);
+        const int ms = (cell && !wifi) ? std::min(cfg.cellular_debounce_ms, cfg.debounce_ms)
+                                       : cfg.debounce_ms;
+        return std::chrono::milliseconds(ms);
+    };
 
     Tracker tr;
     EvalMemo memo;
@@ -741,8 +843,8 @@ int run_daemon()
                 }
                 // Trailing-edge debounce, capped so endless flapping still
                 // converges on a decision instead of deferring forever.
-                deadline = std::min(now + debounce(),
-                                    first + debounce() * kMaxDebounceStretch);
+                const auto w = window();
+                deadline = std::min(now + w, first + w * kMaxDebounceStretch);
             }
         }
 

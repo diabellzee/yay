@@ -1,7 +1,7 @@
 id=yay
 name=yay
-version=v1.3
-versionCode=4
+version=v1.4
+versionCode=5
 author=uruhara91
-description=System tweaks: I/O scheduler, component disable, appops, game mode, optional auto Private DNS (Wi-Fi/mobile). Run-on-demand; no resident process unless the optional watcher or Auto Private DNS is enabled. Includes a fingerprint-locked Zygisk fix for a SystemUI MediaMetadata NPE crash (Infinix X6815B, firmware 231020V486 only — inert no-op elsewhere). v1.3: added Auto Private DNS (yay_dns).
+description=System tweaks: I/O scheduler, component disable, appops, game mode, optional auto Private DNS (Wi-Fi/mobile). Run-on-demand; no resident process unless the optional watcher or Auto Private DNS is enabled. Includes a fingerprint-locked Zygisk fix for a SystemUI MediaMetadata NPE crash (Infinix X6815B, firmware 231020V486 only — inert no-op elsewhere). v1.3: added Auto Private DNS (yay_dns). v1.4: faster handover, smoother WebUI, watcher flag survives updates.
 updateJson=

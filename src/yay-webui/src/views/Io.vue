@@ -21,7 +21,7 @@
     <!-- Content -->
     <div class="scrollbar-hidden pb-safe-nav flex-1 min-h-0 overflow-y-auto">
       <div class="max-w-2xl mx-auto px-5 py-2 space-y-4">
-        <LoadingSpinner v-if="store.loading" />
+        <Skeleton v-if="store.loading" :rows="5" />
 
         <div v-else-if="store.error" class="text-error text-sm py-4 text-center">{{ store.error }}</div>
 
@@ -95,6 +95,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useIoStore } from '@/stores/io'
 import LoadingSpinner from '@/components/ui/LoadingSpinner.vue'
+import Skeleton from '@/components/ui/Skeleton.vue'
 import Snackbar from '@/components/ui/Snackbar.vue'
 import PlayIcon from '@/components/icons/Play.vue'
 import ArrowUpIcon from '@/components/icons/ArrowUp.vue'

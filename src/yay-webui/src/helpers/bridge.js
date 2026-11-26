@@ -254,17 +254,159 @@ const LOG = '/data/adb/yay/run.log'
 const LOG1 = '/data/adb/yay/run.log.1'
 const BIN = '/data/adb/modules/yay/bin/yay_apply'
 const CACHE = '/data/adb/yay/cache/rules.hash'
-const WATCH_FLAG = '/data/adb/modules/yay/enable_watch'
+// Persistent across module updates. The pre-1.4 location inside the module
+// directory is wiped by every update; it is still honoured (read, and removed
+// on disable) so a not-yet-migrated install keeps showing the right state.
+const WATCH_FLAG = '/data/adb/yay/enable_watch'
+const WATCH_FLAG_LEGACY = '/data/adb/modules/yay/enable_watch'
 
 export const PATHS = { CONFIG, LOG, LOG1, BIN, CACHE, WATCH_FLAG }
 
+// ── Config snapshot: ONE root exec for everything ───────────────────────────
+// On KernelSU every readFile()/fileExists() is its own root-shell spawn
+// (tens of ms each). Opening each tab used to cost its own spawn(s) —
+// ~11 in total across the app, each one a visible "loading…" the first time
+// a tab was opened. Instead the whole config set + the watcher flag is read
+// in a single exec at startup (primeConfigs) and served from memory.
+//
+// `configCache` always holds "the last known on-disk text" per file
+// (null = file missing). It is refreshed by every batch read and updated by
+// every writeConfig, so readConfig() never returns something older than the
+// app itself last wrote or read. The only thing it cannot see is someone
+// editing the files from a terminal while the WebUI is open — a restart of
+// the WebUI re-reads.
+const CONFIG_FILES = ['rules.json', 'game_config.json', 'io_config.json', 'dns_config.json']
+
+const configCache = new Map()
+let watcherCache = null
+let primePromise = null
+
+function parseBatch(stdout) {
+  const configs = new Map()
+  let watcher = false
+  let current = null
+  for (const line of stdout.split('\n')) {
+    if (line.startsWith('@@F ')) {
+      current = line.slice(4).trim()
+      configs.set(current, '') // present; content follows (empty file => '')
+    } else if (line.startsWith('@@M ')) {
+      configs.set(line.slice(4).trim(), null) // missing
+      current = null
+    } else if (line.startsWith('@@W ')) {
+      watcher = line.slice(4).trim() === '1'
+      current = null
+    } else if (current && line) {
+      try {
+        configs.set(current, fromBase64(line.trim()))
+      } catch {
+        configs.set(current, null)
+      }
+      current = null
+    }
+  }
+  return { configs, watcher }
+}
+
+async function batchRead(names) {
+  const fi = findFileInterface()
+
+  if (!fi && isKSU()) {
+    const loop = names
+      .map(
+        (n) =>
+          `if [ -f "${n}" ]; then echo "@@F ${n}"; base64 -w0 "${n}"; echo; else echo "@@M ${n}"; fi`,
+      )
+      .join('; ')
+    const { errno, stdout } = await exec(
+      `cd "${CONFIG}" 2>/dev/null || exit 4; ${loop}; ` +
+        `if [ -f "${WATCH_FLAG}" ] || [ -f "${WATCH_FLAG_LEGACY}" ]; then echo "@@W 1"; else echo "@@W 0"; fi`,
+    )
+    if (errno === 0) return parseBatch(stdout)
+    // fall through to per-file reads if the combined command failed
+  }
+
+  // WebUI X (synchronous file interface) / dev mock: reads are cheap and
+  // involve no root shell, so per-file is fine.
+  const configs = new Map()
+  await Promise.all(
+    names.map(async (n) => {
+      try {
+        configs.set(n, await readFile(`${CONFIG}/${n}`))
+      } catch {
+        configs.set(n, null)
+      }
+    }),
+  )
+  const watcher =
+    (await fileExists(WATCH_FLAG).catch(() => false)) ||
+    (await fileExists(WATCH_FLAG_LEGACY).catch(() => false))
+  return { configs, watcher }
+}
+
+function absorb({ configs, watcher }) {
+  for (const [name, text] of configs) configCache.set(name, text)
+  watcherCache = watcher
+}
+
+/**
+ * Kick off the single startup read. Fire-and-forget: it never rejects, and
+ * any readConfig()/readSnapshot() that arrives while it is in flight simply
+ * waits for it instead of spawning its own exec.
+ */
+export function primeConfigs() {
+  if (!primePromise) {
+    primePromise = batchRead(CONFIG_FILES).then(absorb, () => {})
+  }
+  return primePromise
+}
+
+/**
+ * Parsed config objects (null = missing/unreadable) + watcher flag.
+ * `fresh: true` forces a new batch read (one exec) — used to refresh Home;
+ * otherwise the primed/cached data is returned without touching disk.
+ */
+export async function readSnapshot(names, { fresh = false } = {}) {
+  if (!fresh) {
+    await primePromise
+    if (names.every((n) => configCache.has(n)) && watcherCache !== null) {
+      return snapshotOf(names)
+    }
+  }
+  absorb(await batchRead(CONFIG_FILES))
+  return snapshotOf(names)
+}
+
+function parseOrNull(text) {
+  if (text == null) return null
+  try {
+    return JSON.parse(text)
+  } catch {
+    return null
+  }
+}
+
+function snapshotOf(names) {
+  const configs = {}
+  for (const n of names) configs[n] = parseOrNull(configCache.get(n))
+  return { configs, watcher: watcherCache === true }
+}
+
 export async function readConfig(name) {
+  await primePromise
+  if (configCache.has(name)) {
+    const text = configCache.get(name)
+    if (text === null) throw new Error(`readFile: not found: ${CONFIG}/${name}`)
+    return JSON.parse(text)
+  }
   const raw = await readFile(`${CONFIG}/${name}`)
+  configCache.set(name, raw)
   return JSON.parse(raw)
 }
 
 export async function writeConfig(name, obj) {
-  await writeFile(`${CONFIG}/${name}`, JSON.stringify(obj, null, 2))
+  const text = JSON.stringify(obj, null, 2)
+  await writeFile(`${CONFIG}/${name}`, text)
+  configCache.set(name, text)
 }
 
 export async function applyRules(extra = '') {
@@ -306,8 +448,10 @@ export async function readPrevLog() {
 
 /** Whether the inotify watcher is enabled (presence of a flag file). */
 export async function isWatcherEnabled() {
+  await primePromise
+  if (watcherCache !== null) return watcherCache
   try {
-    return await fileExists(WATCH_FLAG)
+    return (await fileExists(WATCH_FLAG)) || (await fileExists(WATCH_FLAG_LEGACY))
   } catch {
     return false
   }
@@ -317,8 +461,9 @@ export async function setWatcherEnabled(enabled) {
   if (enabled) {
     await writeFile(WATCH_FLAG, '')
   } else {
-    await exec(`rm -f "${WATCH_FLAG}"`)
+    await exec(`rm -f "${WATCH_FLAG}" "${WATCH_FLAG_LEGACY}"`)
   }
+  watcherCache = enabled
 }
 
 // ── Auto Private DNS (yay_dns) ──────────────────────────────────────────────

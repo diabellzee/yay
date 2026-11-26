@@ -4,14 +4,13 @@
     <input type="checkbox" class="peer sr-only"
       :checked="modelValue" :disabled="disabled"
       @change="$emit('update:modelValue', $event.target.checked)" />
-    <div class="relative h-8 w-13 rounded-full border-2 transition-colors duration-150"
+    <div class="relative h-8 w-13 rounded-full border-2 transition-colors duration-200"
       :class="modelValue
         ? 'border-primary bg-primary'
         : 'border-outline bg-surface-container-highest'">
-      <div class="absolute top-1/2 -translate-y-1/2 rounded-full shadow-sm transition-[width,height,transform,background-color] duration-150 flex items-center justify-center"
-        :class="modelValue
-          ? 'h-6 w-6 bg-on-primary translate-x-6'
-          : 'h-4 w-4 bg-outline translate-x-1.5'">
+      <!-- Fixed 24px thumb; on/off/pressed are transforms only (no layout). -->
+      <div class="toggle-thumb absolute left-0 top-1/2 -mt-3 h-6 w-6 rounded-full shadow-sm flex items-center justify-center"
+        :class="modelValue ? 'on bg-on-primary' : 'bg-outline'">
         <svg class="h-4 w-4 transition-[opacity,transform] duration-200"
           :class="modelValue ? 'opacity-100 scale-100' : 'opacity-0 scale-50'"
           viewBox="0 0 24 24" fill="currentColor">

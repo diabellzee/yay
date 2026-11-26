@@ -1,4 +1,4 @@
-# yay v1.3
+# yay v1.4
 
 Personal Android system tweaks as a Magisk module.  
 **ARM64 only. Android 11 (API 30) minimum, optimized for Android 12+ (API 31).**
@@ -222,18 +222,23 @@ The watcher (`yay_watch`) watches `/data/adb/yay/config/` for file changes and
 calls `yay_apply` with the targeted mode. It blocks in `inotify_wait` — near-zero
 CPU and memory overhead when idle.
 
-To enable:
+To enable (or use the WebUI toggle in Settings):
 ```sh
-touch /data/adb/modules/yay/enable_watch
+touch /data/adb/yay/enable_watch
 # Takes effect on next boot, or restart service.sh manually
 ```
 
 To disable:
 ```sh
-rm /data/adb/modules/yay/enable_watch
+rm /data/adb/yay/enable_watch
 # Kill running watcher:
 pkill yay_watch
 ```
+
+The flag lives in `/data/adb/yay/` so it survives module updates. (Up to
+v1.3 it was `/data/adb/modules/yay/enable_watch`, which every update wiped —
+the watcher silently turned off. The installer and `service.sh` migrate an
+old flag automatically.)
 
 ---
 
@@ -261,7 +266,8 @@ Enable it in the WebUI (*Settings → Auto Private DNS*), or edit
   "enabled": true,
   "wifi_host": "abc123.dns.nextdns.io",
   "mobile_host": "1dot1dot1dot1.cloudflare-dns.com",
-  "debounce_ms": 1500
+  "debounce_ms": 1500,
+  "cellular_debounce_ms": 300
 }
 ```
 
@@ -291,6 +297,15 @@ hostnames — IP literals are rejected.
   cellular interface is not treated as data and Wi-Fi wins. That check is
   skipped when only cellular is up, so an odd reading (e.g. dual-SIM) can
   never stop the mobile profile from applying.
+- **Fast where it matters.** The debounce is direction-aware: when mobile
+  data is the *only* network up, the carrier may block the NextDNS profile
+  and Private DNS fails until we switch, so that direction uses
+  `cellular_debounce_ms` (default 300 ms). Moving to Wi-Fi breaks nothing in
+  the meantime, so it keeps the full `debounce_ms` (default 1500 ms).
+  Measured handover: Wi-Fi drops → Cloudflare applied in ~0.3 s instead of
+  ~1.5 s. Trade-off: a Wi-Fi roam where `wlan0` loses its address for longer
+  than 300 ms now causes two harmless writes; raise `cellular_debounce_ms`
+  if you prefer fewer.
 - **Robust.** Debounced (trailing edge, capped so endless flapping still
   converges), idempotent (never rewrites a value that's already correct),
   every write is read back and retried on failure, waits for the Settings
@@ -438,28 +453,63 @@ yay/
 
 ## Changelog
 
-**v1.3**
-- New **Auto Private DNS** (`yay_dns`, opt-in): Wi-Fi → your NextDNS host,
-  mobile data → Cloudflare (mobile data wins when both are up; `prefer` key), to get around carrier blocking of NextDNS.
-  Netlink event-driven (zero polling), no VPN/TUN, debounced and idempotent,
-  respects manual Private DNS changes. WebUI toggle + host fields in
-  Settings. See the dedicated section above.
-- `ConfigKind::DnsConfig` structural validation for `dns_config.json`.
-- Host-side unit tests for the policy logic, run in CI.
-- **Fix:** the logger now notices when another process rotated `run.log`
-  out from under it (by inode). Long-lived `yay_dns` / `yay_watch` used to
-  keep appending to `run.log.1`, leaving the WebUI's "Current" tab empty.
+**v1.4**
+
+*Fixes*
+- **Watcher setting survived nothing:** `enable_watch` lived inside the module
+  directory, which every update replaces — the watcher silently turned off
+  after each update. It now lives in `/data/adb/yay/` and the installer /
+  `service.sh` migrate an old flag automatically.
+- **Logger:** now notices when another process rotated `run.log` out from
+  under it (by inode). Long-lived `yay_dns` / `yay_watch` used to keep
+  appending to `run.log.1`, leaving the WebUI's "Current" tab empty.
+- **CI:** `webroot/` is replaced, not merged, on every build — Vite's hashed
+  filenames used to pile old assets up inside the module zip.
+
+*Daemons*
+- `yay_dns`: direction-aware debounce — after Wi-Fi drops, the mobile profile
+  is applied in ~0.3 s instead of ~1.5 s (new key `cellular_debounce_ms`).
+- `yay_dns`: Settings reads run concurrently and the write is verified by
+  reading back only what was written (serial spawns on the handover critical
+  path: 5 → 3).
 - `yay_dns`: events that don't change the network kind no longer spawn
   `cmd settings` (30 such events: 60 spawns → 0).
-- WebUI: navbar no longer uses `backdrop-blur`; non-Home views are
-  code-split and prefetched when idle (entry JS 183 → 134 KB); Home and Log
-  refresh when their tab is shown again (stale-while-revalidate, no spinner
-  flash — Home counts used to stay stale after editing rules); Log parses
-  once and renders only the newest 300 lines (older on demand) and reads
-  `run.log.1` only when its tab opens; Rules/Games rows use identity keys and
-  `content-visibility`; Ripple no longer calls `getComputedStyle`; Auto
-  Private DNS toggle no longer waits for `--status`, and Save waits for the
-  daemon to settle instead of a fixed 1.8 s.
+- `yay_watch`: no longer wakes every 5 s while idle (`poll` with no timeout +
+  self-pipe for SIGTERM/SIGINT); retries `waitpid` on EINTR.
+
+*WebUI*
+- **One root exec for all data.** Every config + the watcher flag is read in
+  a single shell call at startup and served from memory; previously each tab
+  paid for its own root-shell spawn the first time it was opened (~11 across
+  the app). Refreshing Home is one batched read instead of four.
+- **One JS + one CSS file** (down from 13 after the short-lived code-split in
+  an earlier build): on KernelSU every asset is a root file read, and a tab
+  tapped before its chunk arrived stalled with no feedback.
+- **Motion:** tab changes fade through (opacity-only — see the note in
+  `main.css` about `position: fixed` FABs); the bottom-nav indicator grows in;
+  every button squashes on press with a springy release; the switch thumb is
+  transform-only; sheets/snackbars enter decelerating and leave
+  accelerating; all of it honours `prefers-reduced-motion`.
+- **No spinners on first paint:** skeleton placeholders shaped like the
+  content; Settings switches show disabled instead of being swapped for a
+  spinner.
+- Navbar without `backdrop-blur`; Home/Log refresh when their tab is shown
+  again (stale-while-revalidate); Log renders the newest 300 lines;
+  Rules/Games rows use identity keys + `content-visibility`; no
+  `getComputedStyle` in Ripple; `touch-action: manipulation`; scroll
+  containment.
+- Version shown in the UI is injected from `module.prop` at build time.
+- WebUI tests (`bun run test`, run in CI): the batch snapshot against a real
+  shell, store behaviour, and a full-app smoke test over every tab.
+
+**v1.3**
+- New **Auto Private DNS** (`yay_dns`, opt-in): Wi-Fi → your NextDNS host,
+  mobile data → Cloudflare (mobile data wins when both are up; `prefer`
+  key), to get around carrier blocking of NextDNS. Netlink event-driven
+  (zero polling), no VPN/TUN, debounced and idempotent, respects manual
+  Private DNS changes. WebUI toggle + host fields in Settings.
+- `ConfigKind::DnsConfig` structural validation for `dns_config.json`.
+- Host-side unit tests for the policy logic, run in CI.
 
 **v1.2**
 - Merged the standalone "SystemUI MediaMetadata NPE Fix" Zygisk module into

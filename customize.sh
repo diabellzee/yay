@@ -23,6 +23,14 @@ for f in rules.json game_config.json io_config.json dns_config.json; do
     fi
 done
 
+# Keep the watcher setting across this update. Older versions stored the flag
+# inside the module directory, which the update replaces; the previous
+# install is still on disk at this point, so carry the flag over.
+if [ -f /data/adb/modules/yay/enable_watch ]; then
+    touch "$YAY_DATA/enable_watch"
+    ui_print "  watcher: kept enabled (flag migrated)"
+fi
+
 # Mark binaries as executable
 chmod 755 "$MODDIR/bin/yay_apply"
 chmod 755 "$MODDIR/bin/yay_watch"

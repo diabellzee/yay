@@ -44,7 +44,7 @@
     <!-- Content -->
     <div class="scrollbar-hidden pb-safe-nav flex-1 min-h-0 overflow-y-auto">
       <div class="max-w-2xl mx-auto px-5 py-2">
-        <LoadingSpinner v-if="store.loading" />
+        <Skeleton v-if="store.loading" :rows="5" />
 
         <div v-else-if="store.error" class="text-error text-sm py-4 text-center">{{ store.error }}</div>
 
@@ -225,6 +225,7 @@ import { useRulesStore } from '@/stores/rules'
 import ToggleSwitch   from '@/components/ui/ToggleSwitch.vue'
 import Modal          from '@/components/ui/Modal.vue'
 import LoadingSpinner from '@/components/ui/LoadingSpinner.vue'
+import Skeleton from '@/components/ui/Skeleton.vue'
 import Snackbar       from '@/components/ui/Snackbar.vue'
 import SearchIcon     from '@/components/icons/Search.vue'
 import CloseIcon      from '@/components/icons/Close.vue'

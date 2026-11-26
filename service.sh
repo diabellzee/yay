@@ -10,8 +10,15 @@ done
 "$MODDIR/bin/yay_apply" --boot
 
 # Optional: start inotify watcher only if user explicitly enables it
-# via sentinel file. Watcher sleeps in inotify_wait — near-zero overhead.
+# via sentinel file. Watcher sleeps in poll() with no timeout — zero wakeups.
+#
+# The sentinel lives in /data/adb/yay so it survives module updates. Older
+# versions kept it inside the module dir, which an update wipes; carry such
+# a leftover over once.
 if [ -f "$MODDIR/enable_watch" ]; then
+    touch /data/adb/yay/enable_watch && rm -f "$MODDIR/enable_watch"
+fi
+if [ -f /data/adb/yay/enable_watch ]; then
     "$MODDIR/bin/yay_watch" &
 fi
 

@@ -48,6 +48,13 @@ struct AutoDnsConfig {
     // Trailing-edge debounce for bursts of netlink events.
     int debounce_ms = 1500;
 
+    // Shorter debounce used when cellular is the ONLY network up. The risk
+    // is asymmetric: on mobile data the carrier may block the NextDNS
+    // profile, so Private DNS fails until we switch — that is the urgent
+    // direction. Moving to Wi-Fi while still on Cloudflare breaks nothing,
+    // so that direction keeps the full, flap-resistant window.
+    int cellular_debounce_ms = 300;
+
     // Station interface(s) only. Exact match, NOT a "wlan*" prefix:
     // softap / Wi-Fi Direct interfaces (ap0, swlan0, wlan1, p2p-*) hold
     // addresses too while the phone is the *hotspot*, which must not be
@@ -66,6 +73,7 @@ struct AutoDnsConfig {
     [[nodiscard]] DnsSetting mobile_profile() const;
 };
 
+constexpr int kMinFastDebounceMs = 100;
 constexpr int kMinDebounceMs = 200;
 constexpr int kMaxDebounceMs = 30000;
 

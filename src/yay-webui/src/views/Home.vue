@@ -24,7 +24,7 @@
           <div class="min-w-0 flex-1">
             <p class="text-sm font-semibold text-on-secondary-container">yay v{{ store.version }}</p>
             <p class="text-xs text-on-secondary-container/70 mt-0.5">
-              System tweaks · No daemon · {{ store.bridge }}
+              System tweaks · {{ store.bridge }}
             </p>
           </div>
           <span v-if="store.watcherEnabled"
@@ -34,7 +34,7 @@
         </div>
 
         <!-- Info card -->
-        <LoadingSpinner v-if="store.loading" :size="28" />
+        <Skeleton v-if="store.loading" :rows="3" />
         <div v-else class="bg-surface-container rounded-2xl divide-y divide-outline-variant/20">
           <InfoRow icon="⚙️" label="I/O Scheduler" :value="ioInfoText" />
           <InfoRow icon="📦" label="Rules" :value="`${store.componentCount} components · ${store.appopCount} appops`" />
@@ -95,6 +95,7 @@ import { useHomeStore } from '@/stores/home'
 import { applyFull } from '@/helpers/bridge'
 import Ripple from '@/components/ui/Ripple.vue'
 import LoadingSpinner from '@/components/ui/LoadingSpinner.vue'
+import Skeleton from '@/components/ui/Skeleton.vue'
 import Snackbar from '@/components/ui/Snackbar.vue'
 import InfoRow from '@/components/ui/InfoRow.vue'
 import GearIcon from '@/components/icons/Gear.vue'

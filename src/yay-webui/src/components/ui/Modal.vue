@@ -24,19 +24,21 @@ defineProps({
 defineEmits(['close'])
 </script>
 <style scoped>
-.modal-enter-active, .modal-leave-active {
-  transition: opacity 200ms cubic-bezier(0.2,0,0,1);
-}
-.modal-enter-active .modal-container, .modal-leave-active .modal-container {
-  transition: transform 200ms cubic-bezier(0.2,0,0,1);
-}
+/* Enter slower and decelerating, leave faster and accelerating — the
+   asymmetry is what makes a sheet feel responsive rather than sluggish. */
+.modal-enter-active { transition: opacity 220ms var(--ease-decel); }
+.modal-leave-active { transition: opacity 160ms linear; }
+.modal-enter-active .modal-container { transition: transform 300ms var(--ease-decel); }
+.modal-leave-active .modal-container { transition: transform 180ms var(--ease-accel); }
 .modal-enter-from, .modal-leave-to { opacity: 0; }
-.modal-enter-from .modal-container, .modal-leave-to .modal-container {
-  transform: translateY(100%) scaleY(0.95);
-}
+.modal-enter-from .modal-container, .modal-leave-to .modal-container { transform: translateY(100%); }
 @media (min-width: 640px) {
   .modal-enter-from .modal-container, .modal-leave-to .modal-container {
-    transform: scale(0.95) translateY(0);
+    transform: scale(0.94) translateY(0);
   }
+}
+@media (prefers-reduced-motion: reduce) {
+  .modal-enter-active, .modal-leave-active,
+  .modal-enter-active .modal-container, .modal-leave-active .modal-container { transition-duration: 1ms; }
 }
 </style>

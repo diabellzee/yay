@@ -399,10 +399,11 @@ bool validate_config_shape(
                             std::string("\"") + key + "\" is not a string");
                     }
                 }
-                if (cfg.contains("debounce_ms") &&
-                    !cfg["debounce_ms"].is_number_integer()) {
-                    return set_error(error_out,
-                        "\"debounce_ms\" is not an integer");
+                for (const char* key : {"debounce_ms", "cellular_debounce_ms"}) {
+                    if (cfg.contains(key) && !cfg[key].is_number_integer()) {
+                        return set_error(error_out,
+                            std::string("\"") + key + "\" is not an integer");
+                    }
                 }
                 for (const char* key : {"wifi_ifaces", "cellular_prefixes"}) {
                     if (!cfg.contains(key)) {

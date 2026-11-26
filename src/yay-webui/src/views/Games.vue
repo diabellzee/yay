@@ -24,7 +24,7 @@
 
     <div class="scrollbar-hidden pb-safe-nav flex-1 min-h-0 overflow-y-auto">
       <div class="max-w-2xl mx-auto px-5 py-2">
-        <LoadingSpinner v-if="store.loading" />
+        <Skeleton v-if="store.loading" :rows="5" />
         <div v-else-if="store.error" class="text-error text-sm py-4 text-center">{{ store.error }}</div>
         <div v-else class="space-y-1.5">
           <div v-for="g in store.filtered" :key="stableKey(g)" class="md3-list lazy-row">
@@ -138,6 +138,7 @@ import Ripple        from '@/components/ui/Ripple.vue'
 import ToggleSwitch  from '@/components/ui/ToggleSwitch.vue'
 import Modal         from '@/components/ui/Modal.vue'
 import LoadingSpinner from '@/components/ui/LoadingSpinner.vue'
+import Skeleton from '@/components/ui/Skeleton.vue'
 import Snackbar      from '@/components/ui/Snackbar.vue'
 import InputField    from '@/components/ui/InputField.vue'
 import SearchIcon    from '@/components/icons/Search.vue'

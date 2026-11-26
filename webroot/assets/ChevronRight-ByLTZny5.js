@@ -1,1 +1,0 @@
-import{_ as o,o as t,f as r,g as n}from"./index-BTApqlVg.js";const s={},c={width:"20",height:"20",viewBox:"0 0 24 24",fill:"currentColor"};function l(a,e){return t(),r("svg",c,[...e[0]||(e[0]=[n("path",{d:"M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"},null,-1)])])}const _=o(s,[["render",l]]);export{_ as C};

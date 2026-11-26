@@ -22,8 +22,7 @@
                 Takes effect on next boot.
               </p>
             </div>
-            <LoadingSpinner v-if="watcherLoading" :size="20" class="shrink-0" />
-            <ToggleSwitch v-else :modelValue="watcherEnabled" @update:modelValue="toggleWatcher" class="shrink-0" />
+            <ToggleSwitch :modelValue="watcherEnabled" :disabled="watcherLoading" @update:modelValue="toggleWatcher" class="shrink-0" />
           </div>
         </div>
 
@@ -39,8 +38,8 @@
                 or reboot.
               </p>
             </div>
-            <LoadingSpinner v-if="dns.loading || dns.saving" :size="20" class="shrink-0" />
-            <ToggleSwitch v-else :key="dnsToggleKey" :modelValue="dns.enabled" @update:modelValue="toggleDns" class="shrink-0" />
+            <LoadingSpinner v-if="dns.saving" :size="20" class="shrink-0" />
+            <ToggleSwitch v-else :key="dnsToggleKey" :modelValue="dns.enabled" :disabled="dns.loading" @update:modelValue="toggleDns" class="shrink-0" />
           </div>
 
           <div class="px-4 pb-4 pt-4 space-y-3 border-t border-outline-variant/15">
@@ -85,7 +84,7 @@
           <h2 class="text-xs font-medium text-on-surface-variant uppercase tracking-wide">About</h2>
         </div>
         <div class="bg-surface-container rounded-2xl divide-y divide-outline-variant/15">
-          <InfoRow icon="🧩" label="Version" value="yay v1.3" />
+          <InfoRow icon="🧩" label="Version" :value="`yay v${YAY_VERSION}`" />
           <InfoRow icon="🔗" label="Bridge" :value="bridge" />
           <InfoRow icon="📁" label="Config path" value="/data/adb/yay/config/" mono />
           <InfoRow icon="📜" label="Log path" value="/data/adb/yay/run.log" mono />
@@ -141,6 +140,7 @@ import {
 } from '@/helpers/bridge'
 
 import { useDnsStore } from '@/stores/dns'
+import { YAY_VERSION } from '@/helpers/version'
 
 import ToggleSwitch from '@/components/ui/ToggleSwitch.vue'
 import InputField from '@/components/ui/InputField.vue'

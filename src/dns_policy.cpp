@@ -183,6 +183,9 @@ std::optional<AutoDnsConfig> parse_dns_config(const Json& cfg, std::string* erro
         const auto debounce = cfg.value("debounce_ms", out.debounce_ms);
         out.debounce_ms = std::clamp(debounce, kMinDebounceMs, kMaxDebounceMs);
 
+        const auto fast = cfg.value("cellular_debounce_ms", out.cellular_debounce_ms);
+        out.cellular_debounce_ms = std::clamp(fast, kMinFastDebounceMs, kMaxDebounceMs);
+
         std::string err;
         if (!read_token_list(cfg, "wifi_ifaces", out.wifi_ifaces, &err) ||
             !read_token_list(cfg, "cellular_prefixes", out.cellular_prefixes, &err)) {

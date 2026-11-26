@@ -47,7 +47,7 @@
         <div v-else-if="!logText" class="text-center py-8 text-on-surface-variant text-sm">
           No log available
         </div>
-        <div v-else class="bg-surface-container rounded-2xl p-3 overflow-x-auto">
+        <div v-else class="bg-surface-container rounded-2xl p-3 overflow-x-auto select-text">
           <button v-if="hiddenCount" @click="showAll = true"
             class="w-full mb-2 py-1.5 rounded-lg text-xs font-medium bg-surface-container-high text-on-surface-variant active:opacity-80">
             Show {{ hiddenCount }} older lines

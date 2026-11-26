@@ -32,6 +32,14 @@
   --font-sans: 'Google Sans Flex', system-ui, sans-serif;
 }
 
+/* ── Motion tokens (Material 3 easing) ── */
+:root {
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-decel:    cubic-bezier(0.05, 0.7, 0.1, 1);   /* things entering */
+  --ease-accel:    cubic-bezier(0.3, 0, 0.8, 0.15);   /* things leaving  */
+  --ease-spring:   cubic-bezier(0.34, 1.45, 0.64, 1); /* slight overshoot on release */
+}
+
 /* ── Base ── */
 *, *::before, *::after { box-sizing: border-box; }
 
@@ -39,6 +47,9 @@ html {
   scrollbar-width: none;
   -ms-overflow-style: none;
   height: 100dvh;
+  /* No double-tap-zoom gesture to wait for: taps register immediately. */
+  touch-action: manipulation;
+  -webkit-text-size-adjust: 100%;
 }
 html::-webkit-scrollbar { display: none; }
 
@@ -58,6 +69,14 @@ body {
 
 a, button, input, select, textarea {
   -webkit-tap-highlight-color: transparent;
+}
+
+/* Controls are not text: no selection handles / callout when a tap drifts
+   into a long-press. Log lines, package names etc. stay selectable. */
+button, a, nav, label, .ripple-wrapper {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
 }
 
 /* ── MD3 list card ── */
@@ -107,7 +126,11 @@ a, button, input, select, textarea {
 }
 
 /* ── Scrollbar hidden utility ── */
-.scrollbar-hidden { scrollbar-width: none; }
+.scrollbar-hidden {
+  scrollbar-width: none;
+  /* Don't chain a flick at the end of a list into the page/WebView. */
+  overscroll-behavior-y: contain;
+}
 .scrollbar-hidden::-webkit-scrollbar { display: none; }
 
 /*
@@ -135,4 +158,101 @@ a, button, input, select, textarea {
 .lazy-row {
   content-visibility: auto;
   contain-intrinsic-size: auto 5.5rem;
+}
+
+/* ═════════════════════════ Motion ═════════════════════════ */
+
+/*
+ * Press feedback for every enabled <button>: a quick, firm squash on touch
+ * and a slight springy overshoot on release. This is declared as ONE
+ * `transition` for buttons (instead of per-class `transition-colors` /
+ * `transition-opacity`), because `scale` has to share the property list with
+ * the colour fades. Specificity (0,1,1) deliberately beats the single-class
+ * Tailwind transition utilities. `scale` (not `transform`) so it can never
+ * clash with a button that already uses translate/rotate utilities.
+ */
+@layer utilities {
+  button:not(:disabled) {
+    transition:
+      scale 220ms var(--ease-spring),
+      color 150ms linear,
+      background-color 150ms linear,
+      border-color 150ms linear,
+      opacity 150ms linear,
+      box-shadow 200ms var(--ease-standard);
+  }
+  button:not(:disabled):active {
+    scale: 0.94;
+    transition:
+      scale 70ms var(--ease-standard),
+      color 150ms linear,
+      background-color 90ms linear,
+      border-color 150ms linear,
+      opacity 90ms linear,
+      box-shadow 200ms var(--ease-standard);
+  }
+}
+
+/*
+ * Tab change = fade-through. OPACITY ONLY, on purpose: the FABs on Rules /
+ * Games are `position: fixed` inside the page, and any active transform on
+ * an ancestor (even a transition's translateY) turns that ancestor into
+ * their containing block — the FAB would ride along and then jump when the
+ * transform ends. Opacity has no such side effect and stays on the
+ * compositor.
+ */
+.tab-enter-active {
+  transition: opacity 180ms var(--ease-decel) 60ms;
+  will-change: opacity;
+}
+.tab-leave-active {
+  transition: opacity 90ms linear;
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  will-change: opacity;
+}
+.tab-enter-from,
+.tab-leave-to { opacity: 0; }
+
+/* Bottom-nav indicator: grows out from the centre and fades in. Compositor
+   properties only (transform/opacity); a press previews the pill. */
+.nav-pill {
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  background-color: var(--color-secondary-container);
+  opacity: 0;
+  transform: scaleX(0.35);
+  transition: transform 260ms var(--ease-decel), opacity 120ms linear;
+}
+.nav-pill.on { opacity: 1; transform: scaleX(1); }
+.nav-item:active .nav-pill:not(.on) { opacity: 0.6; transform: scaleX(0.8); transition-duration: 90ms; }
+.nav-item:active .nav-icon { scale: 0.92; }
+.nav-icon { transition: scale 200ms var(--ease-spring); }
+
+/* Switch thumb: fixed 24px box, state expressed purely as transform. */
+.toggle-thumb {
+  transform: translateX(2px) scale(0.6667);
+  transition: transform 260ms var(--ease-spring), background-color 150ms linear;
+}
+.toggle-thumb.on { transform: translateX(24px) scale(1); }
+label:active .toggle-thumb:not(.on) { transform: translateX(1px) scale(0.85); transition-duration: 90ms; }
+
+/* Skeleton placeholders: opacity pulse (compositor), no layout shift. */
+.skeleton {
+  background-color: var(--color-surface-container-high);
+  border-radius: 0.5rem;
+  animation: skeleton-pulse 1.3s ease-in-out infinite;
+}
+@keyframes skeleton-pulse {
+  0%, 100% { opacity: 0.5; }
+  50%      { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tab-enter-active, .tab-leave-active { transition-duration: 1ms; transition-delay: 0s; }
+  .nav-pill, .nav-icon, .toggle-thumb { transition-duration: 1ms; }
+  .skeleton { animation: none; }
+  button:not(:disabled):active { scale: 1; }
 }

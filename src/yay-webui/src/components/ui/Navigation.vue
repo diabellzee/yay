@@ -8,12 +8,12 @@
     }">
     <div class="w-full h-16 flex items-center justify-around md:h-auto md:flex-col md:gap-2 md:py-6">
       <router-link v-for="item in items" :key="item.path" :to="item.path"
-        class="flex-1 flex flex-col items-center justify-center gap-1 py-1 md:flex-none md:w-full
+        class="nav-item flex-1 flex flex-col items-center justify-center gap-1 py-1 md:flex-none md:w-full
                text-xs font-medium transition-colors duration-200 no-underline"
         :class="active(item) ? 'text-on-surface' : 'text-on-surface-variant'">
-        <div class="h-8 flex items-center justify-center rounded-full px-4 transition-colors duration-200"
-          :class="active(item) ? 'bg-secondary-container' : ''">
-          <component :is="item.icon" :active="active(item)" />
+        <div class="nav-icon relative h-8 w-14 flex items-center justify-center">
+          <span class="nav-pill" :class="{ on: active(item) }" />
+          <component :is="item.icon" :active="active(item)" class="relative" />
         </div>
         <span>{{ item.label }}</span>
       </router-link>

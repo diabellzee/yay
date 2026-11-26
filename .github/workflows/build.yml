@@ -95,7 +95,12 @@ jobs:
         working-directory: src/yay-webui
         run: |
           bun install
+          bun run test
           bun run build
+          # Replace, never merge: webroot/ is committed, and Vite emits
+          # content-hashed filenames — copying over the top would leave every
+          # previous build's assets in the module zip forever.
+          rm -rf ../../webroot
           mkdir -p ../../webroot
           cp -r ./dist/* ../../webroot/
 

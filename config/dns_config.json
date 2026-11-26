@@ -5,5 +5,6 @@
   "wifi_host": "",
   "mobile_host": "1dot1dot1dot1.cloudflare-dns.com",
   "prefer": "cellular",
-  "debounce_ms": 1500
+  "debounce_ms": 1500,
+  "cellular_debounce_ms": 300
 }
