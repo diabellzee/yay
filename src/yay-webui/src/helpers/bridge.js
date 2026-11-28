@@ -275,7 +275,13 @@ export const PATHS = { CONFIG, LOG, LOG1, BIN, CACHE, WATCH_FLAG }
 // app itself last wrote or read. The only thing it cannot see is someone
 // editing the files from a terminal while the WebUI is open — a restart of
 // the WebUI re-reads.
-const CONFIG_FILES = ['rules.json', 'game_config.json', 'io_config.json', 'dns_config.json']
+const CONFIG_FILES = [
+  'rules.json',
+  'game_config.json',
+  'io_config.json',
+  'dns_config.json',
+  'net_config.json',
+]
 
 const configCache = new Map()
 let watcherCache = null
@@ -512,6 +518,105 @@ export async function getDnsStatus() {
     return null
   }
 }
+
+// ── Network engine (yay_net) ────────────────────────────────────────────────
+// Same contract as yay_dns: `--start` detaches it or makes a running one
+// reload net_config.json (idempotent), `--restore` stops it AND puts every
+// value back to what the device had.
+const NET_BIN = '/data/adb/modules/yay/bin/yay_net'
+
+export async function startNetDaemon() {
+  const { errno, stderr } = await exec(`${NET_BIN} --start`)
+  if (errno !== 0) throw new Error(stderr.trim() || `yay_net --start failed (${errno})`)
+}
+
+export async function restoreNet() {
+  await exec(`${NET_BIN} --restore`)
+}
+
+/** { running, enabled, profile, foreground, events_ok, tcp, rules, … } or null. */
+export async function getNetStatus() {
+  try {
+    const { errno, stdout } = await exec(`${NET_BIN} --status`)
+    if (errno !== 0) return null
+    return JSON.parse(stdout)
+  } catch {
+    return null
+  }
+}
+
+/** Does this ROM emit the logcat events Smart Auto depends on? */
+export async function netSelftest() {
+  try {
+    const { stdout } = await exec(`${NET_BIN} --selftest`)
+    return JSON.parse(stdout)
+  } catch {
+    return null
+  }
+}
+
+// ── App lists for the Boost / Isolate pickers ───────────────────────────────
+
+const DEV_APPS = {
+  user: ['com.mobile.legends', 'com.android.chrome', 'org.telegram.messenger', 'com.whatsapp', 'com.spotify.music'],
+  system: ['com.android.settings', 'com.android.systemui', 'com.google.android.gms'],
+}
+
+/** Package names for the 'user' or 'system' tab. */
+export async function listAppsDetailed(kind = 'user') {
+  if (!isLive()) return DEV_APPS[kind].map((packageName) => ({ packageName }))
+
+  if (isKSU()) {
+    try {
+      const raw =
+        kind === 'system' && typeof window.ksu.listSystemPackages === 'function'
+          ? window.ksu.listSystemPackages()
+          : kind === 'user' && typeof window.ksu.listUserPackages === 'function'
+            ? window.ksu.listUserPackages()
+            : null
+      if (raw) return JSON.parse(raw).map((packageName) => ({ packageName }))
+    } catch (e) {
+      console.error('[bridge] listPackages failed:', e)
+    }
+  }
+  const { errno, stdout, stderr } = await exec(`pm list packages ${kind === 'system' ? '-s' : '-3'}`)
+  if (errno !== 0) throw new Error(`listApps: ${stderr}`)
+  return stdout
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l.startsWith('package:'))
+    .map((l) => ({ packageName: l.slice(8).trim() }))
+    .filter((p) => p.packageName)
+}
+
+/**
+ * Resolve display labels in small batches, yielding to the event loop between
+ * them: getPackagesInfo is a synchronous JNI call, and doing 300 packages at
+ * once would freeze the picker as it opens. `onChunk({pkg: label})` fires per
+ * batch so labels appear progressively.
+ */
+export async function getAppLabels(names, onChunk) {
+  if (!(isKSU() && typeof window.ksu.getPackagesInfo === 'function')) return
+  const BATCH = 40
+  for (let i = 0; i < names.length; i += BATCH) {
+    const slice = names.slice(i, i + BATCH)
+    try {
+      const res = JSON.parse(window.ksu.getPackagesInfo(JSON.stringify(slice)))
+      const chunk = {}
+      res.forEach((x, idx) => {
+        const name = x?.packageName || slice[idx]
+        if (name && x && !x.error) chunk[name] = x.appLabel || name
+      })
+      onChunk(chunk)
+    } catch (e) {
+      console.warn('[bridge] getAppLabels batch failed:', e)
+    }
+    await new Promise((r) => setTimeout(r, 0))
+  }
+}
+
+/** KernelSU serves launcher icons itself; the <img> falls back to a letter. */
+export const appIconUrl = (packageName) => `ksu://icon/${packageName}`
 
 // ── yay_inspect: on-demand component/appops browser ────────────────────────
 // Backs the "Add component" / "Add appops override" pickers so the person

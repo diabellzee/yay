@@ -29,6 +29,7 @@ import IconRules from '@/components/icons/Rules.vue'
 import IconGame from '@/components/icons/Game.vue'
 import IconIo from '@/components/icons/Io.vue'
 import IconLog from '@/components/icons/Log.vue'
+import IconNet from '@/components/icons/Network.vue'
 
 const route = useRoute()
 const navEl = ref(null)
@@ -38,6 +39,7 @@ const items = [
   { path: '/', label: 'Home', icon: IconHome },
   { path: '/rules', label: 'Rules', icon: IconRules },
   { path: '/games', label: 'Games', icon: IconGame },
+  { path: '/net', label: 'Network', icon: IconNet },
   { path: '/io', label: 'I/O', icon: IconIo },
   { path: '/log', label: 'Log', icon: IconLog },
 ]

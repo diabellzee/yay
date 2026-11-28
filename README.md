@@ -1,4 +1,4 @@
-# yay v1.4
+# yay v1.5
 
 Personal Android system tweaks as a Magisk module.  
 **ARM64 only. Android 11 (API 30) minimum, optimized for Android 12+ (API 31).**
@@ -14,8 +14,9 @@ install.
 ## Architecture
 
 No persistent daemon by default. Binary runs, does its job, exits. The only
-resident processes are the two **opt-in** ones: the inotify watcher and
-Auto Private DNS (`yay_dns`), both of which sleep in `poll()` with no timers.
+resident processes are the **opt-in** ones — the inotify watcher, Auto
+Private DNS (`yay_dns`) and the network engine (`yay_net`) — all of which
+sleep in `poll()` with no timeout while nothing happens.
 
 | Trigger | What runs | How |
 |---|---|---|
@@ -26,6 +27,8 @@ Auto Private DNS (`yay_dns`), both of which sleep in `poll()` with no timers.
 | game_config.json changed | `yay_apply --game` | inotify watcher (opt-in) |
 | Boot completed (opt-in via `dns_config.json`) | `yay_dns --start` | `service.sh` |
 | Wi-Fi / mobile-data change | `yay_dns` switches Private DNS | netlink event (no polling) |
+| Boot completed (opt-in via `net_config.json`) | `yay_net --start` | `service.sh` |
+| Foreground app / screen change | `yay_net` switches profile (Smart Auto) | `logcat -b events` line (no polling) |
 | App process forked (fingerprint match only) | `systemui_media_fix.so` PLT hook | Zygisk |
 
 Hash caching: `--rules` is skipped at boot if `rules.json` hasn't changed
@@ -58,6 +61,7 @@ is rejected outright and logged; nothing partial is applied from it.
 - Game mode: per-package resolution downscale via Android GameManager API
 - fstrim: deferred 60s after boot
 - Auto Private DNS (opt-in): Wi-Fi → your NextDNS host, mobile data → Cloudflare (see below)
+- Network engine (opt-in): sysctl profiles, Smart Auto by foreground app, per-app boost / isolate, TCP choice, reversible tweaks (see below)
 
 Component disable and appops calls each require one `cmd` invocation per
 entry (Android's `pm`/`appops` shell commands don't support a batch form),
@@ -130,6 +134,7 @@ export ANDROID_NDK_HOME=~/Android/Sdk/ndk/26.x.x
 # yay_apply  — one-shot applier
 # yay_watch  — optional inotify watcher
 # yay_dns    — Auto Private DNS daemon
+# yay_net    — network engine (PingPimp port)
 ```
 
 Targets API 31, ABI arm64-v8a, C++20, static libc++ (NDK's `c++_static`).
@@ -361,6 +366,120 @@ g++ -std=c++20 -Isrc -I<nlohmann include dir> \
 
 ---
 
+## Network engine (`yay_net`)
+
+A port of [PingPimp](https://github.com/fuckyoustan/PingPimp) (Apache-2.0,
+see `NOTICE`), re-built around this module's rules: event-driven, reversible,
+and tested. Opt-in — enable it in the WebUI's **Network** tab.
+
+| Feature | What it does |
+|---|---|
+| **Profiles** | `balanced`, `game`, `download`, `streaming`, `social`, `outdoor` — sets of 42 sysctls under `/proc/sys/net`. `off` = the device's own values. |
+| **Smart Auto** | Foreground app → profile: your Games list (+ apps that declare the GAME category) → `game`; video apps → `streaming`; chat/browsers → `social`; anything else → your base profile. Explicit `app_profiles` in the config beat every heuristic. Screen off → base profile. |
+| **TCP congestion control** | Leave alone, `auto` (per profile: westwood/bbr for games, bbr for downloads, cubic otherwise), or a specific algorithm the kernel offers. |
+| **Boost apps** | DSCP 46 (MARK fallback if the kernel lacks `xt_DSCP`) on the app's outgoing traffic. Only helps where the router honours DSCP/WMM. |
+| **Isolate apps** | `REJECT` for the app's UID — it loses internet access. |
+| **Toggles** | IPv6 off, Wi-Fi power-save off (needs `iw`), Wi-Fi low-latency, conntrack tuning, network-stats off, ultra data saver, NIC IRQs on big cores, ksoftirqd priority. |
+
+### How it works
+
+- **No polling.** `poll()` with no timeout over: a `NETLINK_ROUTE` socket
+  (link/address changes), the stdout of `logcat -b events` (AOSP's
+  `system_server` logs each resumed activity and each screen on/off as it
+  happens — `yay_net --selftest` checks that your ROM does), and a signal
+  pipe. Nothing runs while you stay in one app on a stable network.
+  The only timers are one-shot: a debounce after a network burst, and the
+  "app must stay foreground `confirm_ms`" confirmation (so flicking through
+  apps never churns the kernel). A rapid flick commits only the app you
+  settle on.
+- **Everything is reversible, to the device's real values.** Before the first
+  write to any path its original value is snapshotted (tied to the boot id —
+  a snapshot from a previous boot is ignored). `yay_net --restore` — or just
+  switching the engine off — puts every sysctl, IRQ mask, Settings key and
+  iptables chain back. Settings changes (`netstats_enabled`, data saver) are
+  kept in a stash that survives reboots, because those persist.
+- **Per-app rules are atomic.** Boost/Isolate live in dedicated chains
+  (`YAY_QOS` in mangle, `YAY_JAIL` in filter), each referenced by exactly one
+  jump, and replaced with a single `iptables-restore --noflush` transaction
+  per family (IPv4 + IPv6). Re-applying never adds rules; netd rebuilding
+  `OUTPUT` is repaired on the next network event.
+- **Packages resolved with one file read** (`/data/system/packages.list`).
+- **Writes are skipped when the value is already right**, so a repeated apply
+  costs a few `read()`s and no process spawns.
+
+### What changed from PingPimp
+
+| PingPimp | yay_net |
+|---|---|
+| Daemon wakes every 10 s to run `dumpsys power`, every 10 s more to run `cmd activity stack info` and re-exec itself, every 30 s to `ping` 1.1.1.1 ×4 | No timers while idle; foreground/screen come from `logcat -b events` |
+| `pm list packages -U` (a framework dump) **per app** | one read of `packages.list` |
+| Rules added with `iptables -I OUTPUT …` each pass; as written, nothing removes the previous ones, so the chain grows | dedicated chains replaced atomically; jump asserted once |
+| "Default" preset written back as its own constants; IRQ affinity "restored" to `ff` for every IRQ | exact per-path restore from a snapshot |
+| `tcp_abort_on_overflow=1` in the game preset | 0 everywhere (it only resets connections when an accept queue overflows — meaningless for a client) |
+| `service.sh` waits in a loop for `wpa_supplicant.conf` before starting anything | no such wait |
+| Uninstall forces `private_dns_mode=off` | uninstall restores what it changed and never touches your Private DNS |
+| Private DNS flip (screen-on poll, `sleep(3)`, no manual-override handling) | superseded by `yay_dns` (event-driven, respects manual changes); PingPimp's provider list is available as presets in Settings |
+
+### Not ported, on purpose
+
+- **Active probing** (4× `ping` per evaluation, MTU discovery by pinging): it
+  sends traffic and wakes the radio, a carrier that filters ICMP reads as
+  "100 % loss", and guessing an MTU can break connections.
+- **"IPv6 off" via airplane-mode toggling and rewriting the APN protocol**:
+  drops calls/hotspot, persists in the telephony database, and "re-enable"
+  forces `IPV4V6` on every APN instead of restoring each one. The sysctl
+  toggle is ported.
+- **Editing `wpa_supplicant.conf` and the MediaTek `wifi.cfg` overlay** (EDCCA
+  / roaming thresholds): persistent Wi-Fi-stack changes on a *Wi-Fi driver
+  config*, with regulatory implications. Not something to ship by default.
+- **NIC offload (`ethtool -K gro/gso off`)**, **tc qdisc/filter setup**, and
+  **per-SSID DNS**: low value or untestable here; open to a follow-up.
+
+### Commands
+
+```sh
+yay_net --start      # start detached, or make the running one reload config
+yay_net --stop       # stop (leaves applied values in place)
+yay_net --restore    # stop AND put everything back to the device's values
+yay_net --once       # apply the base profile once, no daemon
+yay_net --status     # JSON: profile, foreground app, rules, tcp, knobs
+yay_net --selftest   # does this ROM emit the events Smart Auto needs?
+```
+
+### `net_config.json`
+
+```json
+{
+  "enabled": true,
+  "profile": "balanced",
+  "auto": true,
+  "auto_detect_games": true,
+  "confirm_ms": 4000,
+  "tcp_algo": "auto",
+  "boost_apps": ["com.mobile.legends"],
+  "jail_apps": [],
+  "app_profiles": { "com.example.torrent": "download" },
+  "toggles": { "wifi_ps_off": true }
+}
+```
+
+### Limitations — read these
+
+- **The presets are PingPimp's values and have not been independently
+  benchmarked.** On a modern phone most of them are marginal; treat them as
+  presets to try, not guaranteed wins. Use `off` to see the difference.
+- **Smart Auto depends on ROM logging.** Run `yay_net --selftest` (or the
+  button in the Network tab) once; if it reports no foreground events, Smart
+  Auto cannot work on that ROM and the base profile simply stays in force.
+- Per-app rules cover the primary user (user 0) only.
+- Boost helps only with routers/APs that honour DSCP; on mobile data it is
+  usually ignored by the network.
+- Not yet run on a real Android device: it was exercised on a Linux kernel
+  with real sysctls, netfilter and netlink, and fake `logcat`/`cmd`/`iw`.
+  The first thing to check on-device is `--selftest` and `--status`.
+
+---
+
 ## Logs
 
 ```
@@ -378,7 +497,8 @@ adb logcat -s yay       — real-time (tag: yay / yay_watch)
 │   ├── rules.json
 │   ├── game_config.json
 │   ├── io_config.json
-│   └── dns_config.json
+│   ├── dns_config.json
+│   └── net_config.json
 ├── cache/
 │   ├── rules.hash      ← hash of last applied rules.json (rules.json only — see Hash caching above)
 │   └── yay_dns.lock    ← single-instance lock for yay_dns
@@ -428,14 +548,16 @@ yay/
 │   ├── yay_apply       ← compiled ARM64 binary
 │   ├── yay_watch       ← compiled ARM64 binary
 │   ├── yay_inspect     ← compiled ARM64 binary
-│   └── yay_dns         ← compiled ARM64 binary (Auto Private DNS)
+│   ├── yay_dns         ← compiled ARM64 binary (Auto Private DNS)
+│   └── yay_net         ← compiled ARM64 binary (network engine)
 ├── zygisk/
 │   └── arm64-v8a.so    ← SystemUI MediaMetadata NPE Fix (fingerprint-locked)
 ├── config/             ← default configs (copied to /data/adb/yay/config/ on install)
 │   ├── rules.json
 │   ├── game_config.json
 │   ├── io_config.json
-│   └── dns_config.json
+│   ├── dns_config.json
+│   └── net_config.json
 ├── tests/              ← host-side unit tests (not shipped)
 ├── src/                ← C++20 source (not shipped in module zip)
 │   └── media_fix/       ← Zygisk module source (module.cpp, binder.cpp/hpp, zygisk.hpp)
@@ -445,6 +567,9 @@ yay/
 ├── customize.sh
 ├── post-fs-data.sh
 ├── service.sh
+├── uninstall.sh        ← stops daemons, runs `yay_net --restore`
+├── NOTICE              ← third-party notices (PingPimp, Apache-2.0)
+├── LICENSES/
 ├── skip_mount
 └── module.prop
 ```
@@ -452,6 +577,19 @@ yay/
 ---
 
 ## Changelog
+
+**v1.5**
+- New **network engine** (`yay_net`, opt-in) — a port of PingPimp: profiles,
+  Smart Auto by foreground app, TCP choice, per-app Boost / Isolate, and a
+  set of reversible toggles. Event-driven (netlink + `logcat -b events`), every
+  change snapshotted and undone to the device's real values, per-app rules in
+  dedicated iptables chains replaced atomically. See the section above for
+  what changed from PingPimp and what was deliberately not ported.
+- WebUI: new **Network** tab (grouped like PingPimp's Config page), app pickers
+  with real launcher icons, DNS provider presets in Settings (86 providers).
+- `uninstall.sh`: stops the daemons and runs `yay_net --restore`.
+- Shared `daemon_util` / `netlink_util`; new unit tests for the policy logic and
+  the knob store; WebUI tests for the store, picker and every tab.
 
 **v1.4**
 

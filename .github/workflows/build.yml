@@ -56,12 +56,18 @@ jobs:
           g++ -std=c++20 -Isrc -I"$JSON_INC" \
               tests/dns_policy_test.cpp src/dns_policy.cpp -o /tmp/dns_policy_test
           /tmp/dns_policy_test
+          g++ -std=c++20 -Isrc -I"$JSON_INC" \
+              tests/net_policy_test.cpp src/net_policy.cpp src/net_presets.cpp -o /tmp/net_policy_test
+          /tmp/net_policy_test
+          g++ -std=c++20 -Isrc -I"$JSON_INC" -Wno-unused-result \
+              tests/net_knobs_test.cpp src/net_knobs.cpp src/json_config.cpp src/logger.cpp -o /tmp/net_knobs_test
+          /tmp/net_knobs_test
 
       - name: Verify binaries
         run: |
-          file bin/yay_apply bin/yay_watch bin/yay_inspect bin/yay_dns
-          # Sanity: all four must be ARM64, all must exist and be non-empty.
-          for bin in bin/yay_apply bin/yay_watch bin/yay_inspect bin/yay_dns; do
+          file bin/yay_apply bin/yay_watch bin/yay_inspect bin/yay_dns bin/yay_net
+          # Sanity: all five must be ARM64, all must exist and be non-empty.
+          for bin in bin/yay_apply bin/yay_watch bin/yay_inspect bin/yay_dns bin/yay_net; do
             [ -s "$bin" ] || { echo "::error::$bin is missing or empty"; exit 1; }
             file "$bin" | grep -q "ARM aarch64" || { echo "::error::$bin is not ARM64"; exit 1; }
           done
@@ -128,14 +134,18 @@ jobs:
           cp customize.sh "$stage/"
           cp post-fs-data.sh "$stage/"
           cp service.sh "$stage/"
+          cp uninstall.sh "$stage/"
           cp skip_mount "$stage/"
+          # Apache-2.0 §4: derived parts (PingPimp) ship with their notice + license.
+          cp NOTICE "$stage/"
+          cp -r LICENSES "$stage/"
           if [ -f zygisk/arm64-v8a.so ]; then
             mkdir -p "$stage/zygisk"
             cp zygisk/arm64-v8a.so "$stage/zygisk/"
           fi
 
-          chmod 755 "$stage"/bin/yay_apply "$stage"/bin/yay_watch "$stage"/bin/yay_inspect "$stage"/bin/yay_dns
-          chmod 755 "$stage"/customize.sh "$stage"/post-fs-data.sh "$stage"/service.sh
+          chmod 755 "$stage"/bin/yay_apply "$stage"/bin/yay_watch "$stage"/bin/yay_inspect "$stage"/bin/yay_dns "$stage"/bin/yay_net
+          chmod 755 "$stage"/customize.sh "$stage"/post-fs-data.sh "$stage"/service.sh "$stage"/uninstall.sh
           [ -f "$stage/zygisk/arm64-v8a.so" ] && chmod 644 "$stage/zygisk/arm64-v8a.so"
           true
 

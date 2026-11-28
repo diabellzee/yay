@@ -30,7 +30,7 @@ bool save_json(std::string_view path, const Json& j) noexcept;
 //
 // Returns true if `cfg` has a sane top-level shape for `kind`. On failure,
 // `error_out` (if non-null) is set to a short human-readable reason.
-enum class ConfigKind { Rules, GameConfig, IoConfig, DnsConfig };
+enum class ConfigKind { Rules, GameConfig, IoConfig, DnsConfig, NetConfig };
 
 [[nodiscard]]
 bool validate_config_shape(

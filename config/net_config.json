@@ -1,0 +1,24 @@
+{
+  "_comment": "yay Network engine (PingPimp port). profile: off|balanced|game|download|streaming|social|browsing|outdoor ('off' = the device's own values). auto: switch profile by foreground app (event-driven, no polling). tcp_algo: ''=leave, 'auto'=per profile, or e.g. 'bbr'. boost_apps get DSCP priority; jail_apps are blocked. Every change is snapshotted and undone by 'yay_net --restore'.",
+  "version": 1,
+  "enabled": false,
+  "profile": "balanced",
+  "auto": false,
+  "auto_detect_games": true,
+  "confirm_ms": 4000,
+  "debounce_ms": 1000,
+  "tcp_algo": "",
+  "boost_apps": [],
+  "jail_apps": [],
+  "app_profiles": {},
+  "toggles": {
+    "ipv6_off": false,
+    "wifi_ps_off": false,
+    "low_latency": false,
+    "conntrack": false,
+    "netstats_off": false,
+    "data_saver": false,
+    "irq_affinity": false,
+    "ksoft_boost": false
+  }
+}

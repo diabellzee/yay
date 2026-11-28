@@ -383,6 +383,65 @@ bool validate_config_shape(
                 }
                 return true;
             }
+            case ConfigKind::NetConfig: {
+                // Types only; names/ranges are checked by parse_net_config().
+                for (const char* key : {"enabled", "auto", "auto_detect_games"}) {
+                    if (cfg.contains(key) && !cfg[key].is_boolean()) {
+                        return set_error(error_out,
+                            std::string("\"") + key + "\" is not a boolean");
+                    }
+                }
+                for (const char* key : {"profile", "tcp_algo"}) {
+                    if (cfg.contains(key) && !cfg[key].is_string()) {
+                        return set_error(error_out,
+                            std::string("\"") + key + "\" is not a string");
+                    }
+                }
+                for (const char* key : {"confirm_ms", "debounce_ms"}) {
+                    if (cfg.contains(key) && !cfg[key].is_number_integer()) {
+                        return set_error(error_out,
+                            std::string("\"") + key + "\" is not an integer");
+                    }
+                }
+                for (const char* key : {"boost_apps", "jail_apps"}) {
+                    if (!cfg.contains(key)) {
+                        continue;
+                    }
+                    if (!cfg[key].is_array()) {
+                        return set_error(error_out,
+                            std::string("\"") + key + "\" is not an array");
+                    }
+                    for (const auto& s : cfg[key]) {
+                        if (!s.is_string()) {
+                            return set_error(error_out,
+                                std::string(key) + " has a non-string entry");
+                        }
+                    }
+                }
+                if (cfg.contains("app_profiles")) {
+                    if (!cfg["app_profiles"].is_object()) {
+                        return set_error(error_out, "\"app_profiles\" is not an object");
+                    }
+                    for (const auto& kv : cfg["app_profiles"].items()) {
+                        if (!kv.value().is_string()) {
+                            return set_error(error_out,
+                                "app_profiles[\"" + kv.key() + "\"] is not a string");
+                        }
+                    }
+                }
+                if (cfg.contains("toggles")) {
+                    if (!cfg["toggles"].is_object()) {
+                        return set_error(error_out, "\"toggles\" is not an object");
+                    }
+                    for (const auto& kv : cfg["toggles"].items()) {
+                        if (!kv.value().is_boolean()) {
+                            return set_error(error_out,
+                                "toggles[\"" + kv.key() + "\"] is not a boolean");
+                        }
+                    }
+                }
+                return true;
+            }
             case ConfigKind::DnsConfig: {
                 // Types only — range/format checks (hostname syntax,
                 // debounce bounds) live in parse_dns_config(), which is

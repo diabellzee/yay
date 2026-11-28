@@ -101,6 +101,23 @@ add_executable(yay_dns
     src/exec_util.cpp
 )
 
+# yay_net: network engine (profiles, per-app boost/jail, Smart Auto) — the
+# PingPimp port. Same reasoning as yay_dns: a lean, resident, event-driven
+# process, so it links only what it needs rather than COMMON_SOURCES.
+add_executable(yay_net
+    src/main_net.cpp
+    src/net_engine.cpp
+    src/net_knobs.cpp
+    src/net_policy.cpp
+    src/net_presets.cpp
+    src/net_rules.cpp
+    src/netlink_util.cpp
+    src/daemon_util.cpp
+    src/logger.cpp
+    src/json_config.cpp
+    src/exec_util.cpp
+)
+
 # yay_inspect: on-demand manifest/appops browser for the webui's "add
 # component" / "add appops" pickers. Separate binary rather than folded
 # into yay_apply — it pulls in zlib (for DEFLATE-compressed manifest
@@ -122,7 +139,8 @@ foreach(target
     yay_apply
     yay_watch
     yay_inspect
-    yay_dns)
+    yay_dns
+    yay_net)
 
     target_compile_features(${target}
         PRIVATE
@@ -193,6 +211,7 @@ target_link_libraries(yay_inspect PRIVATE z)
 # few percent of speed (it is asleep in poll() virtually all the time).
 # Appended after the per-target -O2 above, so it wins for this target only.
 target_compile_options(yay_dns PRIVATE $<$<CONFIG:Release>:-Os>)
+target_compile_options(yay_net PRIVATE $<$<CONFIG:Release>:-Os>)
 
 #
 # SystemUI MediaMetadata NPE Fix (Zygisk module)
@@ -315,7 +334,8 @@ foreach(target
     yay_apply
     yay_watch
     yay_inspect
-    yay_dns)
+    yay_dns
+    yay_net)
 
     target_link_options(${target}
         PRIVATE
@@ -328,7 +348,7 @@ foreach(target
 endforeach()
 
 # Install
-install(TARGETS yay_apply yay_watch yay_inspect yay_dns RUNTIME DESTINATION bin)
+install(TARGETS yay_apply yay_watch yay_inspect yay_dns yay_net RUNTIME DESTINATION bin)
 
 install(CODE [[
 execute_process(
@@ -342,6 +362,9 @@ execute_process(
 )
 execute_process(
     COMMAND ${CMAKE_STRIP} --strip-all ${CMAKE_INSTALL_PREFIX}/bin/yay_dns
+)
+execute_process(
+    COMMAND ${CMAKE_STRIP} --strip-all ${CMAKE_INSTALL_PREFIX}/bin/yay_net
 )
 ]]
 )

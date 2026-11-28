@@ -42,7 +42,7 @@ describe('whole app, every tab', () => {
       expect(w.text()).toMatch(/\d+ components · \d+ appops/)
     })
 
-    const tabs = [['/rules', 'Rules'], ['/games', 'Games'], ['/io', 'I/O'], ['/log', 'Log'], ['/', 'Home'], ['/rules', 'Rules']]
+    const tabs = [['/rules', 'Rules'], ['/games', 'Games'], ['/net', 'Network'], ['/io', 'I/O'], ['/log', 'Log'], ['/', 'Home'], ['/net', 'Network'], ['/rules', 'Rules']]
     for (const [path, label] of tabs) {
       await router.push(path)
       await waitFor(() => {
@@ -57,11 +57,22 @@ describe('whole app, every tab', () => {
     // Rules rows use identity keys + lazy rows, and toggling one flips real state
     expect(document.querySelectorAll('.lazy-row').length).toBeGreaterThan(0)
 
+    // Network tab: engine off by default, so everything below it is inert
+    await router.push('/net')
+    await waitFor(() => {
+      expect(document.body.textContent).toContain('Network engine')
+      expect(document.body.textContent).toContain('Smart Auto')
+      expect(document.body.textContent).toContain('Disable IPv6')
+      expect(document.querySelector('.skeleton')).toBeNull()
+    })
+    expect(document.querySelector('.opacity-45')).not.toBeNull()   // engine off -> dimmed + pointer-events-none
+
     // Settings (reached like the Home gear does)
     await router.push('/settings')
     await waitFor(() => {
       expect(document.querySelectorAll('main .page').length).toBe(1)
       expect(document.body.textContent).toContain('Auto Private DNS')
+      expect(document.body.textContent).toContain('Wi-Fi provider preset')
     })
 
     // DNS toggle with an empty NextDNS host: refused, switch remounted back to OFF

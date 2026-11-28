@@ -1,0 +1,41 @@
+yay — third-party notices
+=========================
+
+PingPimp
+--------
+Parts of the network engine (yay_net) and the WebUI's Network tab are derived
+from PingPimp.
+
+  Project:   PingPimp — https://github.com/fuckyoustan/PingPimp
+  Copyright: (c) fuckyoustan
+  License:   Apache License, Version 2.0 (full text: LICENSES/PingPimp-Apache-2.0.txt)
+
+What is derived (Apache-2.0 §4(b): these files carry prominent notices that
+they were changed):
+
+  * src/net_presets.cpp — the sysctl value sets for the balanced / game /
+    download / streaming / social / outdoor profiles (PingPimp's OP_DEFAULT,
+    OP_GAME, OP_DOWNLOAD, OP_STREAMING, OP_SOCIAL, OP_OUTDOOR tables).
+  * src/net_policy.cpp — app-category heuristics (classify_pkg), the TCP
+    congestion-control preference lists, the big-core IRQ-affinity mask rule.
+  * src/net_engine.cpp — the set of tunables behind the toggles (IPv6,
+    conntrack, IRQ affinity, ksoftirqd priority, Wi-Fi power-save and
+    low-latency mode, network-stats, data saver) and their values.
+  * yay-webui/src/helpers/dnsProviders.js — the DNS provider catalogue
+    (display names and hostnames).
+  * The overall feature set and parts of the WebUI's layout/UX (grouped
+    Config page, per-app Boost / Isolate pickers with app icons).
+
+Everything else in yay_net is original to this project and not derived from
+PingPimp's code: the daemon (event-driven, no polling), KnobStore snapshot /
+restore, the per-app iptables-restore chains, the logcat-event reader, the
+shared netlink and daemon utilities, and the tests.
+
+Behavioural differences from PingPimp are listed in README.md ("Network
+engine → What changed from PingPimp"). The preset values are PingPimp's; they
+have not been independently benchmarked here.
+
+Other dependencies
+------------------
+nlohmann/json (MIT) is fetched at build time; Vue, Vue Router, Pinia, Vite,
+Tailwind CSS (MIT) are used by the WebUI.

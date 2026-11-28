@@ -7,6 +7,7 @@ import Games from '@/views/Games.vue'
 import Io from '@/views/Io.vue'
 import Log from '@/views/Log.vue'
 import Settings from '@/views/Settings.vue'
+import Network from '@/views/Network.vue'
 
 // Deliberately NOT code-split. On KernelSU the WebUI's assets are served
 // from the module directory through a root file read, so every extra chunk is
@@ -21,6 +22,7 @@ const routes = [
   { path: '/games', name: 'Games', component: Games },
   { path: '/io', name: 'Io', component: Io },
   { path: '/log', name: 'Log', component: Log },
+  { path: '/net', name: 'Net', component: Network },
   { path: '/settings', name: 'Settings', component: Settings },
 
   // catch-all
@@ -34,7 +36,7 @@ const router = createRouter({
 
 // Top-level tabs, used by App.vue to suppress page-open/close transitions
 // between sibling tabs (only nested/detail navigation should slide).
-export const topLevelRoutes = ['/', '/rules', '/games', '/io', '/log', '/settings']
+export const topLevelRoutes = ['/', '/rules', '/games', '/net', '/io', '/log', '/settings']
 
 // ── WebUI X hardware/gesture back-button support ────────────────────────────
 // No-op outside WebUI X (plain KernelSU WebUI has its own native back

@@ -72,6 +72,19 @@ const DEFAULT_DNS = {
   debounce_ms: 1500,
 }
 
+const DEFAULT_NET = {
+  _comment: 'yay Network engine.',
+  version: 1,
+  enabled: false,
+  profile: 'balanced',
+  auto: false,
+  auto_detect_games: true,
+  tcp_algo: '',
+  boost_apps: [],
+  jail_apps: [],
+  toggles: {},
+}
+
 const DEFAULT_LOG = `[07-01 08:12:03 I yay_apply.cpp:44] yay_apply --boot starting (v1.1)
 [07-01 08:12:03 I io_scheduler.cpp:88] scheduler set to kyber for mmcblk0, sda
 [07-01 08:12:03 I io_scheduler.cpp:112] entropy contribution disabled, iostat disabled
@@ -91,6 +104,7 @@ function seed() {
   store.set('/data/adb/yay/config/game_config.json', JSON.stringify(DEFAULT_GAMES, null, 2))
   store.set('/data/adb/yay/config/io_config.json', JSON.stringify(DEFAULT_IO, null, 2))
   store.set('/data/adb/yay/config/dns_config.json', JSON.stringify(DEFAULT_DNS, null, 2))
+  store.set('/data/adb/yay/config/net_config.json', JSON.stringify(DEFAULT_NET, null, 2))
   store.set('/data/adb/yay/run.log', DEFAULT_LOG)
 }
 seed()

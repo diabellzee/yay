@@ -43,8 +43,16 @@
           </div>
 
           <div class="px-4 pb-4 pt-4 space-y-3 border-t border-outline-variant/15">
+            <div class="-mx-4 rounded-xl overflow-hidden">
+              <SelectField label="Wi-Fi provider preset" :modelValue="presetFor(dns.wifiHost)"
+                :options="PRESET_OPTIONS" @update:modelValue="pickPreset('wifiHost', $event)" />
+            </div>
             <InputField v-model="dns.wifiHost" label="Wi-Fi host (your NextDNS endpoint)"
               placeholder="abc123.dns.nextdns.io" />
+            <div class="-mx-4 rounded-xl overflow-hidden">
+              <SelectField label="Mobile data provider preset" :modelValue="presetFor(dns.mobileHost)"
+                :options="PRESET_OPTIONS" @update:modelValue="pickPreset('mobileHost', $event)" />
+            </div>
             <InputField v-model="dns.mobileHost" label="Mobile data host"
               placeholder="1dot1dot1dot1.cloudflare-dns.com" />
 
@@ -144,6 +152,8 @@ import { YAY_VERSION } from '@/helpers/version'
 
 import ToggleSwitch from '@/components/ui/ToggleSwitch.vue'
 import InputField from '@/components/ui/InputField.vue'
+import SelectField from '@/components/ui/SelectField.vue'
+import { DNS_PROVIDERS } from '@/helpers/dnsProviders'
 import Ripple from '@/components/ui/Ripple.vue'
 import Modal from '@/components/ui/Modal.vue'
 import LoadingSpinner from '@/components/ui/LoadingSpinner.vue'
@@ -187,6 +197,18 @@ onMounted(async () => {
 })
 
 // ── Auto Private DNS ────────────────────────────────────────────────────────
+// Presets only FILL the host field; typing a custom host (your personal
+// NextDNS endpoint) always works, and then the preset reads "Custom".
+const PRESET_OPTIONS = [
+  { value: '', label: 'Custom (type below)' },
+  ...DNS_PROVIDERS.map((p) => ({ value: p.host, label: p.label, hint: p.host })),
+]
+const presetFor = (host) =>
+  DNS_PROVIDERS.some((p) => p.host === String(host).trim().toLowerCase()) ? String(host).trim().toLowerCase() : ''
+function pickPreset(field, value) {
+  if (value) dns[field] = value // '' = "Custom": leave whatever is typed
+}
+
 const dnsToggleKey = ref(0) // bump to force the switch back to the real state
 const NET_LABEL = { wifi: 'Wi-Fi', cellular: 'Mobile data', none: 'No network' }
 

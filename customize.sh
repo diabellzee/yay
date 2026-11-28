@@ -12,7 +12,7 @@ mkdir -p "$CFG_DIR" "$CACHE_DIR"
 chmod 700 "$YAY_DATA" "$CFG_DIR" "$CACHE_DIR"
 
 # Copy default configs only if not already present (preserve user edits on update)
-for f in rules.json game_config.json io_config.json dns_config.json; do
+for f in rules.json game_config.json io_config.json dns_config.json net_config.json; do
     if [ ! -f "$CFG_DIR/$f" ]; then
         if [ -f "$MODDIR/config/$f" ]; then
             cp "$MODDIR/config/$f" "$CFG_DIR/$f"
@@ -36,6 +36,7 @@ chmod 755 "$MODDIR/bin/yay_apply"
 chmod 755 "$MODDIR/bin/yay_watch"
 chmod 755 "$MODDIR/bin/yay_inspect"
 chmod 755 "$MODDIR/bin/yay_dns"
+chmod 755 "$MODDIR/bin/yay_net"
 
 # ─── SystemUI MediaMetadata NPE Fix (Zygisk component) ──────────────────────
 # Fingerprint-locked to one exact firmware build (see media_fix/module.cpp's
@@ -85,6 +86,9 @@ fi
 # (Settings -> Auto Private DNS) or "enabled" is set in dns_config.json.
 ui_print "- yay: Auto Private DNS is off by default"
 ui_print "  Enable it in the WebUI (Settings) and enter your NextDNS host"
+
+ui_print "- yay: Network engine (yay_net) is off by default"
+ui_print "  Enable it in the WebUI (Network tab); 'yay_net --restore' undoes it"
 
 ui_print "- yay: running full first-time apply..."
 "$MODDIR/bin/yay_apply" --full

@@ -30,6 +30,11 @@ fi
 # the daemon must open the fresh file rather than the rotated one.
 "$MODDIR/bin/yay_dns" --start >/dev/null 2>&1
 
+# Network engine (PingPimp port): profiles, per-app boost/jail, Smart Auto.
+# Same contract as yay_dns: exits immediately unless net_config.json has
+# "enabled": true, detaches itself, event-driven afterwards.
+"$MODDIR/bin/yay_net" --start >/dev/null 2>&1
+
 # EEM (Extended Environment Monitor) undervolt offset.
 # Backgrounded + delayed well past boot_completed.
 # Not persisted anywhere by us — this only pokes a runtime kernel node.
