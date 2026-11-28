@@ -13,6 +13,7 @@
 
 #include <dirent.h>
 #include <sys/resource.h>
+#include <unistd.h>
 
 namespace {
 
